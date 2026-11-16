@@ -7,7 +7,7 @@ export const geo = {};
 export async function cargarIndice() {
   const r = await fetch('data/niveles.json');
   if (!r.ok) throw new Error('No se pudo leer data/niveles.json');
-  const j = await r.json(); Object.assign(geo, { lat: j.lat, lon: j.lon, huso: j.huso, norte: j.norte, calle: j.calle, predio: (j.predio || []).map(p => [p[0] / 100, p[1] / 100]) });
+  const j = await r.json(); Object.assign(geo, { lat: j.lat, lon: j.lon, huso: j.huso, norte: j.norte, edificios: j.edificios || [], calle: j.calle, predio: (j.predio || []).map(p => [p[0] / 100, p[1] / 100]) });
   return j.niveles;
 }
 
@@ -30,9 +30,10 @@ export async function cargarNivel(info) {
   const n = {
     id: d.id, nombre: d.nombre, ancho: d.ancho / 100, alto: d.alto / 100,
     muros: aMetros(d.muros), aberturas: aMetros(d.aberturas), barreras: aMetros(d.barreras || []), pisos: d.pisos || null,
+    edif: d.edif || null, huellasEdif: d.huellasEdif || [],
     huellas: (d.huellas || []).map(h => h.map(p => [p[0] / 100, p[1] / 100])), arboles: (d.arboles || []).map(a => a.map(v => v / 100)), detalle: aMetros(d.detalle),
     locales: d.locales.map(l => ({
-      id: l.id, nombre: l.nombre, auto: !!l.auto, exterior: !!l.exterior, area: l.area,
+      id: l.id, nombre: l.nombre, auto: !!l.auto, exterior: !!l.exterior, edif: l.edif ?? 255, sin: l.sin || null, area: l.area,
       poly: l.poly.map(p => [p[0] / 100, p[1] / 100]),
     })),
   };
@@ -40,6 +41,31 @@ export async function cargarNivel(info) {
   n.locales.forEach(l => { [l.cx, l.cy] = centroide(l.poly); });
   cache.set(info.id, n);
   return n;
+}
+
+/** Ids de los edificios que no se muestran en esta muestra. Por defecto, los que todavía son proyecto. */
+export const edificiosOcultos = proy => proy.edificiosOcultos ?? geo.edificios.filter(e => e.proyecto).map(e => e.id);
+
+const filtrados = new Map();
+/**
+ * Devuelve el nivel sin los edificios ocultos: mismos campos, pero sin sus muros, aberturas, detalle,
+ * ambientes ni silueta. Todo el sistema (planta, 3D, circulación, sol, folleto, PDF) trabaja sobre esto.
+ */
+export function nivelVisible(n, proy) {
+  const ids = edificiosOcultos(proy), oc = new Set(ids.map(id => geo.edificios.findIndex(e => e.id === id)).filter(i => i >= 0));
+  const clave = n.id + '|' + [...oc].sort().join();
+  if (filtrados.has(clave)) return filtrados.get(clave);
+  const extra = l => !l.sin || ids.includes(l.sin);          // p. ej. la cancha techada actual, si se oculta el edificio nuevo
+  let f;
+  if (!oc.size || !n.edif) f = { ...n, locales: n.locales.filter(extra) };
+  else {
+    const cortar = k => { const S = n[k], E = n.edif[k], o = []; for (let i = 0, j = 0; i < S.length; i += 4, j++) if (!oc.has(E[j])) o.push(S[i], S[i + 1], S[i + 2], S[i + 3]); return new Float32Array(o); };
+    f = { ...n, muros: cortar('muros'), aberturas: cortar('aberturas'), barreras: cortar('barreras'), detalle: cortar('detalle'),
+      pisos: n.pisos ? n.pisos.filter((_, j) => !oc.has(n.edif.muros[j])) : null,
+      locales: n.locales.filter(l => !oc.has(l.edif) && extra(l)), huellas: n.huellas.filter((_, i) => !oc.has(n.huellasEdif[i])) };
+    f.paths = { muros: aPath(f.muros), aberturas: aPath(f.aberturas), detalle: aPath(f.detalle) };
+  }
+  filtrados.set(clave, f); return f;
 }
 
 /** Espacios disponibles en un nivel: los detectados del plano + los dibujados por el usuario. */

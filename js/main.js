@@ -1,7 +1,7 @@
 // Interfaz: une el estado, el editor 2D, la vista isométrica y la exportación.
 import * as E from './estado.js';
 import { proyecto, marcar, avisar, uid } from './estado.js';
-import { cargarIndice, cargarNivel, espaciosDe, espaciosElegidos, geo } from './niveles.js';
+import { cargarIndice, cargarNivel as cargarCrudo, nivelVisible, edificiosOcultos, espaciosDe, espaciosElegidos, geo } from './niveles.js';
 import * as SOL from './sol.js';
 import { generarFolleto, aPNG, TEMAS, FORMATOS, FOLLETO_DEF } from './folleto.js';
 import * as P from './plano.js';
@@ -50,11 +50,14 @@ function descargar(nombre, contenido, tipo) {
 const archivo = s => (s || 'muestra').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-') || 'muestra';
 
 // ---------- nivel y vistas ----------
+let crudo = null;        // el nivel completo; `nivel` es lo mismo sin los edificios ocultos
+/** Nivel tal como se muestra en esta muestra (sin los edificios ocultos). */
+const cargarNivel = async info => nivelVisible(await cargarCrudo(info), proyecto());
 async function fijarNivel(id, encuadrar = true) {
   const info = indice.find(n => n.id === id) || indice.find(n => n.id === 'pb') || indice[0];
   $('cargando').classList.remove('oculto');
   try {
-    nivel = await cargarNivel(info);
+    crudo = await cargarCrudo(info); nivel = nivelVisible(crudo, proyecto());
   } catch (e) { $('cargando').textContent = 'No se pudo cargar el plano. ' + e.message; return; }
   $('cargando').classList.add('oculto');
   $('selNivel').value = nivel.id;
@@ -344,8 +347,14 @@ function pintarBarra() {
   $('btnDeshacer').disabled = !E.puedeDeshacer(); $('btnRehacer').disabled = !E.puedeRehacer();
 }
 
+function pintarEdificios() {
+  const oc = edificiosOcultos(proyecto());
+  $('listaEdificios').innerHTML = geo.edificios.map(e => `<label class="check"><input type="checkbox" data-id="${e.id}" ${oc.includes(e.id) ? '' : 'checked'}>
+    <span>${esc(e.nombre)}${e.proyecto ? '<small>Proyecto: todavía no está construido</small>' : ''}</span></label>`).join('');
+}
 function pintarEspacios() {
   if (!nivel) return;
+  pintarEdificios();
   const p = proyecto(), f = $('inBuscarEsp').value.trim().toLowerCase();
   const todos = espaciosDe(nivel, p), sel = todos.filter(e => p.espacios.includes(e.id));
   $('resEspacios').textContent = sel.length ? `${sel.length} · ${Math.round(sel.reduce((a, e) => a + e.area, 0))} m²` : 'ninguno';
@@ -633,6 +642,11 @@ function conectar() {
   $('btnEntrada').onclick = () => marcarPaso('entrada'); $('btnSalida').onclick = () => marcarPaso('salida');
   $('inAltura').onchange = e => { marcar(); proyecto().altura = num(e.target.value, 1, 8, 3); avisar('altura'); };
   $('inBuscarEsp').oninput = pintarEspacios;
+  $('listaEdificios').onchange = e => {
+    const id = e.target.dataset.id; if (!id) return;
+    marcar(); const oc = new Set(edificiosOcultos(proyecto())); e.target.checked ? oc.delete(id) : oc.add(id);
+    proyecto().edificiosOcultos = [...oc]; avisar('edificios');
+  };
   $('btnRestaurarEsp').onclick = async () => {
     if (!await confirmar(`¿Volver a los espacios originales del plano en ${nivel.nombre}? Se pierden las formas corregidas y vuelven los que quitaste.`, 'Restaurar')) return;
     marcar(); const p = proyecto(), de = id => id.startsWith(nivel.id + '-');
@@ -722,6 +736,7 @@ async function arrancar() {
     // tras deshacer o cambiar de muestra puede haber ids seleccionados que ya no existen
     const ids = new Set(proyecto().items.map(i => i.id));
     [...ui.seleccion].forEach(id => { if (!ids.has(id)) ui.seleccion.delete(id); });
+    if (crudo) { const f = nivelVisible(crudo, proyecto()); if (f !== nivel) { nivel = f; ui.nivel = f; solTabla = null; } }
     pintarBarra(); solCache = null;
     if (vistaFol) { pintarFolleto(); if (que === 'folleto') return; }
     if (que !== 'nombre' && que !== 'sol' && sim) { sim = null; simComp = null; simPausar(); if (vistaSim) simCrear(); }

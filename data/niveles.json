@@ -1,4 +1,26 @@
 {
+ "edificios": [
+  {
+   "id": "noroeste",
+   "nombre": "Edificio noroeste (laboratorio y aulas)",
+   "proyecto": false
+  },
+  {
+   "id": "norte",
+   "nombre": "Edificio norte (biblioteca y aulas)",
+   "proyecto": false
+  },
+  {
+   "id": "casona",
+   "nombre": "Casona",
+   "proyecto": false
+  },
+  {
+   "id": "fondo",
+   "nombre": "Edificio nuevo del fondo (auditorio, comedor y gimnasio)",
+   "proyecto": true
+  }
+ ],
  "predio": [
   [
    500,

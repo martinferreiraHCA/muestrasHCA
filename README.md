@@ -9,6 +9,10 @@ las ubicaciones.
 - **Niveles y espacios**: subsuelo, planta baja, primer y segundo piso, tomados del plano
   `PLANO_MDCI.dwg`. Los salones se detectan del plano y los exteriores de planta baja (patio
   central, patio este, cancha, explanada) vienen trazados.
+- **Edificios visibles**: cada muestra elige qué edificios se muestran. Los que todavía son
+  proyecto vienen ocultos (hoy, el edificio nuevo del fondo; en su lugar aparece la cancha
+  techada actual). Lo oculto desaparece de la planta, la isométrica, la circulación, el sol,
+  el folleto y el PDF. Se definen en `EDIFICIOS`, al principio de `tools/convertir_plano.py`.
 - **Dibujo de espacios**: se dibujan espacios propios con Rectángulo o Polígono (se pegan a
   las esquinas de los muros) y con Editar forma se corrige cualquiera, incluso los del plano:
   mover esquinas, agregar o quitar, desplazarlo entero, renombrarlo o quitarlo. Siempre se

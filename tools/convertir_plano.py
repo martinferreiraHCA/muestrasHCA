@@ -160,7 +160,21 @@ ARBOLES = [(9.2, 4.6, 3.5), (8.3, 25, 2.6), (16.2, 22.7, 1), (20.2, 25.2, 1.5), 
            (55.4, 63.8, 2.2), (44.2, 60.8, 2), (46.7, 57.5, 2), (51.9, 54.2, 1), (87.9, 67.5, 1.5), (96.5, 36.3, 1.2),
            (107, 58, 1), (107.2, 61, 1), (107.4, 64, 1), (107.6, 67, 1),
            (107.9, 8.7, 1.7), (108.8, 18.2, 1.7), (109.4, 27.9, 1.8), (110.6, 39, 1.8), (111.7, 52.9, 1.8), (112.8, 65.2, 1.8)]
-EDIFICIOS = [(19.5, 6.5, 52.6, 23.6), (53.4, 3.7, 98.8, 23.3), (50.4, 32.2, 73.6, 61.2), (9.5, 45.2, 39.6, 64.2)]
+# Cada edificio se puede mostrar u ocultar en la app. 'proyecto': todavía no existe (obra futura), y
+# viene oculto por defecto para no adelantar lo que no está construido. 'rects_<nivel>': zonas extra.
+EDIFICIOS = [
+    {'id': 'noroeste', 'nombre': 'Edificio noroeste (laboratorio y aulas)', 'rects': [(19.5, 6.5, 52.6, 23.6)]},
+    {'id': 'norte', 'nombre': 'Edificio norte (biblioteca y aulas)', 'rects': [(53.4, 3.7, 98.8, 23.3)]},
+    {'id': 'casona', 'nombre': 'Casona', 'rects': [(49.0, 30.3, 76.2, 61.2)]},
+    {'id': 'fondo', 'nombre': 'Edificio nuevo del fondo (auditorio, comedor y gimnasio)', 'proyecto': True,
+     'rects': [(8.3, 42.0, 41.6, 66.4), (39.5, 47.5, 50.3, 52.8)], 'rects_p2': [(14.0, 36.0, 39.8, 46.0)]},
+]
+def rects_de(e, nid): return e['rects']+e.get('rects_'+nid, [])
+def edif_en(x, y, nid):
+    """Índice del edificio que contiene el punto (metros del nivel), o 255 si es exterior."""
+    for i, e in enumerate(EDIFICIOS):
+        if any(r[0] <= x <= r[2] and r[1] <= y <= r[3] for r in rects_de(e, nid)): return i
+    return 255
 CURADO = {
     'pb': {
         'quitar': [(24.6, 45.6, 39.3, 51.8), (28.5, 51.8, 39.0, 63.9), (71.5, 3.5, 96.5, 7.2)],
@@ -179,6 +193,9 @@ CURADO = {
                                          (107.1, 40.5), (104, 44), (103.8, 48.5), (104.2, 49.8), (98.5, 51.2), (98.3, 57.5), (92.6, 57.5),
                                          (92.6, 55), (81, 55), (81, 60.5), (73.6, 60.5), (73.6, 54), (75.7, 54), (75.7, 41), (73.6, 41)], True),
             ('Jardín junto a la cancha', [(19.8, 23.8), (40.8, 23.8), (40.8, 30.8), (19.8, 30.8)], True),
+            # lo que hay hoy donde va el edificio nuevo: solo se muestra si ese edificio está oculto.
+            # Contorno aproximado a partir de la nota del plano (área deportiva techada, 449 m2).
+            ('Cancha techada', [(14.5, 45.8), (39.2, 45.8), (39.2, 64), (14.5, 64)], True, 'fondo'),
             ('Juegos infantiles', [(81, 55.3), (91.5, 55.3), (91.5, 65.8), (81, 65.8)], True),
         ],
         'renombrar': [((80, 16.3), 'Hall aulas 1 a 6')],
@@ -192,7 +209,6 @@ CURADO = {
         'quitar': [(10, 45.9, 39.3, 64)],
         'agregar': [('Gimnasio', [(10.1, 46), (39.2, 46), (39.2, 63.9), (10.1, 63.9)], False)],
         'renombrar': [((80, 15.7), 'Hall aulas 54 a 59'), ((24, 38.3), 'Gradas del gimnasio'), ((24, 41), 'Pasillo de vestuarios')],
-        'edificios': [(14.5, 36.3, 39.6, 46)],
     },
 }
 
@@ -428,7 +444,7 @@ for nid, nombre, (ax, ay, bx, by) in NIVELES:
 
     cur = CURADO.get(nid, {})
     en = lambda l, r: r[0] <= l['cx']/100 <= r[2] and r[1] <= l['cy']/100 <= r[3]
-    edif = EDIFICIOS+cur.get('edificios', []) if nid != 'ss' else [(0, 0, 999, 999)]
+    edif = [r for e in EDIFICIOS for r in rects_de(e, nid)] if nid != 'ss' else [(0, 0, 999, 999)]
     locales = [l for l in locales if not any(en(l, r) for r in cur.get('quitar', []))
                and (not l.get('auto') or any(en(l, r) for r in edif))]
     for (qx, qy), nom in cur.get('renombrar', []):
@@ -436,11 +452,12 @@ for nid, nombre, (ax, ay, bx, by) in NIVELES:
             if cv2.pointPolygonTest(np.array(l['poly'], np.float32), (qx*100, qy*100), False) >= 0:
                 l['nombre'] = nom; l.pop('auto', None); break
         else: print('  OJO: no hay ambiente en', (qx, qy), 'para', nom)
-    for nom, pts, ext in cur.get('agregar', []):
+    for nom, pts, ext, *sin in cur.get('agregar', []):
         pg = np.array(pts, float); xs, ys = pg[:, 0], pg[:, 1]
         ar = abs(float(np.dot(xs, np.roll(ys, -1))-np.dot(ys, np.roll(xs, -1))))/2
         l = {'nombre': nom, 'area': round(ar, 1), 'poly': [[cm(x), cm(y)] for x, y in pts], 'cx': cm(xs.mean()), 'cy': cm(ys.mean())}
-        if ext: l['exterior'] = True
+        if ext: l['exterior'] = True; l['edif'] = 255        # los patios trazados no son de ningún edificio
+        if sin: l['sin'] = sin[0]
         locales.append(l)
     # nombres repetidos: se distinguen con una letra
     cuenta = {}
@@ -477,6 +494,14 @@ for nid, nombre, (ax, ay, bx, by) in NIVELES:
         'etiquetas': [{'x': cm(e[0]), 'y': cm(e[1]), 't': e[2]+(' '+e[3] if e[3] else '')} for e in etiquetas],
         'locales': locales, 'huellas': huellas, 'arboles': arboles,
     }
+    if nid != 'ss':
+        def ed(seg):
+            a = np.array(seg, float).reshape(-1, 4)/100
+            return [edif_en((q[0]+q[2])/2, (q[1]+q[3])/2, nid) for q in a]
+        data['edif'] = {k: ed(data[k]) for k in ('muros', 'aberturas', 'barreras', 'detalle')}
+        for l in locales:
+            if 'edif' not in l: l['edif'] = edif_en(l['cx']/100, l['cy']/100, nid)
+        data['huellasEdif'] = [edif_en(float(np.mean([p[0] for p in h]))/100, float(np.mean([p[1] for p in h]))/100, nid) for h in huellas]
     datos[nid] = data
     indice.append({'id': nid, 'nombre': nombre, 'archivo': nid+'.json', 'ancho': cm(W), 'alto': cm(H)})
     print(nid, f'{W:.1f}x{H:.1f} m', 'muros', len(data['muros'])//4, 'abert', len(data['aberturas'])//4, 'det', len(data['detalle'])//4,
@@ -535,4 +560,4 @@ for nid, d in datos.items():
     json.dump(d, open(os.path.join(OUT, nid+'.json'), 'w'), ensure_ascii=False, separators=(',', ':'))
 # Norte: el símbolo del plano apunta a 215,5° (antihorario desde +X del dibujo); en pantalla,
 # con Y hacia abajo, son 234,5° en sentido horario desde "arriba".
-json.dump({'predio': [[500, 380], [10410, 380], [10920, 6880], [750, 6880]], 'calle': 'Av. Millán', 'norte': 234.5, 'lat': -34.86, 'lon': -56.19, 'huso': -3, 'niveles': indice}, open(os.path.join(OUT, 'niveles.json'), 'w'), ensure_ascii=False, indent=1)
+json.dump({'edificios': [{'id': e['id'], 'nombre': e['nombre'], 'proyecto': bool(e.get('proyecto'))} for e in EDIFICIOS], 'predio': [[500, 380], [10410, 380], [10920, 6880], [750, 6880]], 'calle': 'Av. Millán', 'norte': 234.5, 'lat': -34.86, 'lon': -56.19, 'huso': -3, 'niveles': indice}, open(os.path.join(OUT, 'niveles.json'), 'w'), ensure_ascii=False, indent=1)
