@@ -350,7 +350,7 @@ function pintarBarra() {
 function pintarEdificios() {
   const oc = edificiosOcultos(proyecto());
   $('listaEdificios').innerHTML = geo.edificios.map(e => `<label class="check"><input type="checkbox" data-id="${e.id}" ${oc.includes(e.id) ? '' : 'checked'}>
-    <span>${esc(e.nombre)}${e.proyecto ? '<small>Proyecto: todavía no está construido</small>' : ''}</span></label>`).join('');
+    <span>${esc(e.nombre)}${e.proyecto ? '<small>Proyecto: todavía no está construido</small>' : e.demoler ? '<small>Existe hoy; el plano prevé demolerlo</small>' : ''}</span></label>`).join('');
 }
 function pintarEspacios() {
   if (!nivel) return;
@@ -689,6 +689,7 @@ function conectar() {
   document.querySelectorAll('#herramientas [data-h]').forEach(b => { b.onclick = () => herr(b.dataset.h); });
   $('chkIman').onchange = e => { ui.iman = e.target.checked; };
   $('chkDetalle').onchange = e => { ui.detalle = e.target.checked; P.pedir(); };
+  $('chkNotas').onchange = e => { ui.notas = e.target.checked; P.pedir(); };
   $('btnEncuadrar').onclick = P.encuadrar;
   $('btnGiroIzq').onclick = () => iso?.girar(-1); $('btnGiroDer').onclick = () => iso?.girar(1);
   $('selMuros').onchange = $('chkEtiquetas3d').onchange = $('chkSol3d').onchange = () => iso?.actualizarIso(nivel, proyecto(), opIso());

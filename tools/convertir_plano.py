@@ -165,9 +165,17 @@ ARBOLES = [(9.2, 4.6, 3.5), (8.3, 25, 2.6), (16.2, 22.7, 1), (20.2, 25.2, 1.5), 
 EDIFICIOS = [
     {'id': 'noroeste', 'nombre': 'Edificio noroeste (laboratorio y aulas)', 'rects': [(19.5, 6.5, 52.6, 23.6)]},
     {'id': 'norte', 'nombre': 'Edificio norte (biblioteca y aulas)', 'rects': [(53.4, 3.7, 98.8, 23.3)]},
+    # notas del plano: «RAMPA A CONSTRUIR», «PASARELA A CONSTRUIR»
+    {'id': 'obras', 'nombre': 'Rampas y pasarela (a construir)', 'proyecto': True,
+     'rects': [(48.8, 30.2, 51.25, 46.6), (48.8, 30.2, 56.2, 32.45), (39.5, 47.5, 50.3, 52.8)]},
     {'id': 'casona', 'nombre': 'Casona', 'rects': [(49.0, 30.3, 76.2, 61.2)]},
+    # nota del plano: «AREA DEPORTIVA TECHADA - AÑO 2012 - A DESMONTAR - 449.00 m2» donde va este edificio
     {'id': 'fondo', 'nombre': 'Edificio nuevo del fondo (auditorio, comedor y gimnasio)', 'proyecto': True,
-     'rects': [(8.3, 42.0, 41.6, 66.4), (39.5, 47.5, 50.3, 52.8)], 'rects_p2': [(14.0, 36.0, 39.8, 46.0)]},
+     'rects': [(8.3, 42.0, 41.6, 66.4)], 'rects_p2': [(14.0, 36.0, 39.8, 46.0)]},
+    # nota del plano (lámina de 2.º piso): «AULAS Y COMEDOR AÑO 2010 - A DEMOLER - 166.50 m2». Existe hoy pero el
+    # plano ya no lo dibuja: se reconstruye su contorno a partir de la zona rayada.
+    {'id': 'aulas2010', 'nombre': 'Aulas y comedor de 2010', 'demoler': True, 'rects': [],
+     'manual': {'pb': ('Aulas y comedor (2010)', [(46.8, 23), (59.2, 23), (59.2, 27.6), (69.6, 27.6), (69.6, 32.5), (56.2, 32.5), (56.2, 31.5), (46.8, 31.5)])}},
 ]
 def rects_de(e, nid): return e['rects']+e.get('rects_'+nid, [])
 def edif_en(x, y, nid):
@@ -181,8 +189,14 @@ CURADO = {
         'agregar': [
             ('Hall 1', [(24.7, 45.8), (39.1, 45.8), (39.1, 51.6), (24.7, 51.6)], False),
             ('Comedor 2', [(28.7, 51.9), (38.9, 51.9), (38.9, 63.8), (28.7, 63.8)], False),
+            # el patio central tiene dos versiones: como es hoy (con el bloque de 2010 en el medio) y como quedaría
+            ('Patio central', [(41, 23), (45.4, 23), (45.4, 17.6), (69, 17.6), (69, 20.4), (75.6, 20.4), (75.6, 23.2), (77.4, 23.2), (77.4, 32.5),
+                               (69.6, 32.5), (69.6, 27.6), (59.2, 27.6), (59.2, 23), (46.8, 23), (46.8, 31.5), (49, 31.5), (49, 45.2), (41, 45.2)], True, None, 'aulas2010'),
             ('Patio central', [(41, 23), (45.4, 23), (45.4, 17.6), (69, 17.6), (69, 20.4), (75.6, 20.4), (75.6, 23.2), (77.4, 23.2),
-                               (77.4, 32.5), (49, 32.5), (49, 45.2), (41, 45.2)], True),
+                               (77.4, 32.5), (49, 32.5), (49, 45.2), (41, 45.2)], True, 'aulas2010'),
+            # notas del plano: «FUENTE EXISTENTE - A DEMOLER», y canchas con «pav. césped sintético» (capa aparte)
+            ('Fuente', [(36.8, 26.6), (41, 26.6), (41, 29.2), (36.8, 29.2)], True),
+            ('Cancha de césped sintético (fútbol y básquetbol)', [(96.7, 57.7), (104.5, 57.7), (104.5, 67.4), (96.7, 67.4)], True),
             ('Patio este', [(77.6, 23.2), (102, 23.2), (103, 28), (100, 33), (96, 41.5), (82, 41.5), (79.5, 33), (77.6, 30)], True),
             ('Pasaje entre edificios', [(52.3, 8.3), (58.3, 8.3), (58.3, 17.4), (52.3, 17.4)], True),
             ('Cancha de fútbol', [(16.2, 31.1), (35.9, 31.1), (35.9, 41.8), (16.2, 41.8)], True),
@@ -212,7 +226,8 @@ CURADO = {
     },
 }
 
-LOCAL = re.compile(r'^(AULA|SS\.?HH|OFICINA|HALL|LABORATORIO|ADMINISTRACI|COCINA|COMEDOR|SAL[OÓ]N|SALA|AUDITORIO|DEP[OÓ]SITO|RECEPCI|DIRECCI|VESTUARIO|PORTER|BIBLIOTECA|GALER|PATIO|AREA DEPORTIVA|CANCHA|AZOTEA|EXPLANADA|GIMNASIO|ENFERMER|SECRETAR|TALLER|CANTINA|CAPILLA|SUM\b)', re.I)
+NOTA = re.compile(r'CONSTRUIR|DEMOLER|DESMONTAR|AÑO 20|PORTON|TANQUES|DOBLE ALTURA|a reparar|contrapiso|damero|a plantar|FUENTE|sintético|proyección|TECHO LIVIANO|CUBIERTA LIVIANA|AZOTEA|GRADAS|basketball|AREA DEPORTIVA|PEATONAL|VEHICULAR|HABILITADAS|pedregullo|EXPLANADA|Tejido|Medianera|CERCO', re.I)
+LOCAL = re.compile(r'^(KITCHENETTE|REUNI[OÓ]N|AULA|SS\.?HH|OFICINA|HALL|LABORATORIO|ADMINISTRACI|COCINA|COMEDOR|SAL[OÓ]N|SALA|AUDITORIO|DEP[OÓ]SITO|RECEPCI|DIRECCI|VESTUARIO|PORTER|BIBLIOTECA|GALER|PATIO|AREA DEPORTIVA|CANCHA|AZOTEA|EXPLANADA|GIMNASIO|ENFERMER|SECRETAR|TALLER|CANTINA|CAPILLA|SUM\b)', re.I)
 CONT = re.compile(r'^(DE USOS|M[UÚ]LTIPLES|MULTIUSO|BIBLIOTECA|DORMIR|TRANSITABLE|TECHADA|AUXILIAR|EXTERIOR EXISTENTE|DE F[UÚ]TBOL|DE PROFESORES|DE ARTE|DE M[UÚ]SICA|INFORM[AÁ]TICA)', re.I)
 
 def nombre_lindo(s):
@@ -455,18 +470,23 @@ for nid, nombre, (ax, ay, bx, by) in NIVELES:
     for nom, pts, ext, *sin in cur.get('agregar', []):
         pg = np.array(pts, float); xs, ys = pg[:, 0], pg[:, 1]
         ar = abs(float(np.dot(xs, np.roll(ys, -1))-np.dot(ys, np.roll(xs, -1))))/2
-        l = {'nombre': nom, 'area': round(ar, 1), 'poly': [[cm(x), cm(y)] for x, y in pts], 'cx': cm(xs.mean()), 'cy': cm(ys.mean())}
+        # punto del rótulo: el más alejado de los bordes (el promedio puede caer fuera en formas con entrantes)
+        mk = np.zeros((int((ys.max()-ys.min())/0.2)+3, int((xs.max()-xs.min())/0.2)+3), np.uint8)
+        cv2.fillPoly(mk, [np.c_[(xs-xs.min())/0.2+1, (ys-ys.min())/0.2+1].astype(np.int32)], 1)
+        dd = cv2.distanceTransform(mk, cv2.DIST_L2, 3); qy, qx = np.unravel_index(int(dd.argmax()), dd.shape)
+        l = {'nombre': nom, 'area': round(ar, 1), 'poly': [[cm(x), cm(y)] for x, y in pts], 'cx': cm(xs.min()+(qx-1)*0.2), 'cy': cm(ys.min()+(qy-1)*0.2)}
         if ext: l['exterior'] = True; l['edif'] = 255        # los patios trazados no son de ningún edificio
-        if sin: l['sin'] = sin[0]
+        if sin and sin[0]: l['sin'] = sin[0]             # solo si ese edificio está oculto
+        if len(sin) > 1: l['con'] = sin[1]              # solo si ese edificio está visible
         locales.append(l)
     # nombres repetidos: se distinguen con una letra
     cuenta = {}
     for l in locales:
-        if l['nombre']: cuenta[l['nombre']] = cuenta.get(l['nombre'], 0)+1
+        if l['nombre'] and not l.get('sin') and not l.get('con'): cuenta[l['nombre']] = cuenta.get(l['nombre'], 0)+1
     visto = {}
     for l in sorted(locales, key=lambda l: (l['cy'], l['cx'])):
         n = l['nombre']
-        if n and cuenta[n] > 1:
+        if n and cuenta.get(n, 0) > 1 and not l.get('sin') and not l.get('con'):
             visto[n] = visto.get(n, 0)+1; l['nombre'] = f"{n} ({'abcdefghijklmnop'[visto[n]-1]})"
     locales.sort(key=lambda l: (l['nombre'] is None, l['nombre'] or '', l['cy'], l['cx']))
     k = 0; ids = set()
@@ -493,6 +513,7 @@ for nid, nombre, (ax, ay, bx, by) in NIVELES:
         'muros': pack(S['m']), 'aberturas': pack(S['a']), 'barreras': pack(barreras), 'detalle': pack(S['d'], 0.12),
         'etiquetas': [{'x': cm(e[0]), 'y': cm(e[1]), 't': e[2]+(' '+e[3] if e[3] else '')} for e in etiquetas],
         'locales': locales, 'huellas': huellas, 'arboles': arboles,
+        'notas': [{'x': cm(x), 'y': cm(y), 't': t} for x, y, h, t in T if NOTA.search(t) and 0 < x < W and 0 < y < H],
     }
     if nid != 'ss':
         def ed(seg):
@@ -501,7 +522,17 @@ for nid, nombre, (ax, ay, bx, by) in NIVELES:
         data['edif'] = {k: ed(data[k]) for k in ('muros', 'aberturas', 'barreras', 'detalle')}
         for l in locales:
             if 'edif' not in l: l['edif'] = edif_en(l['cx']/100, l['cy']/100, nid)
-        data['huellasEdif'] = [edif_en(float(np.mean([p[0] for p in h]))/100, float(np.mean([p[1] for p in h]))/100, nid) for h in huellas]
+        h_manual = {}
+        for ie, e in enumerate(EDIFICIOS):
+            if nid in e.get('manual', {}):
+                nom, pts = e['manual'][nid]; pc = [[cm(x), cm(y)] for x, y in pts]
+                pg = np.array(pts, float); ar = abs(float(np.dot(pg[:, 0], np.roll(pg[:, 1], -1))-np.dot(pg[:, 1], np.roll(pg[:, 0], -1))))/2
+                for i in range(len(pc)):
+                    data['muros'] += pc[i]+pc[(i+1) % len(pc)]; data['edif']['muros'].append(ie)
+                huellas.append(pc); h_manual[len(huellas)-1] = ie
+                locales.append({'nombre': nom, 'area': round(ar, 1), 'poly': pc, 'cx': cm(pg[:, 0].mean()-3), 'cy': cm(pg[:, 1].mean()-1.5), 'edif': ie,
+                                'id': nid+'-'+e['id']})
+        data['huellasEdif'] = [h_manual.get(k, edif_en(float(np.mean([p[0] for p in h]))/100, float(np.mean([p[1] for p in h]))/100, nid)) for k, h in enumerate(huellas)]
     datos[nid] = data
     indice.append({'id': nid, 'nombre': nombre, 'archivo': nid+'.json', 'ancho': cm(W), 'alto': cm(H)})
     print(nid, f'{W:.1f}x{H:.1f} m', 'muros', len(data['muros'])//4, 'abert', len(data['aberturas'])//4, 'det', len(data['detalle'])//4,
@@ -560,4 +591,4 @@ for nid, d in datos.items():
     json.dump(d, open(os.path.join(OUT, nid+'.json'), 'w'), ensure_ascii=False, separators=(',', ':'))
 # Norte: el símbolo del plano apunta a 215,5° (antihorario desde +X del dibujo); en pantalla,
 # con Y hacia abajo, son 234,5° en sentido horario desde "arriba".
-json.dump({'edificios': [{'id': e['id'], 'nombre': e['nombre'], 'proyecto': bool(e.get('proyecto'))} for e in EDIFICIOS], 'predio': [[500, 380], [10410, 380], [10920, 6880], [750, 6880]], 'calle': 'Av. Millán', 'norte': 234.5, 'lat': -34.86, 'lon': -56.19, 'huso': -3, 'niveles': indice}, open(os.path.join(OUT, 'niveles.json'), 'w'), ensure_ascii=False, indent=1)
+json.dump({'edificios': [{'id': e['id'], 'nombre': e['nombre'], 'proyecto': bool(e.get('proyecto')), 'demoler': bool(e.get('demoler'))} for e in EDIFICIOS], 'predio': [[500, 380], [10410, 380], [10920, 6880], [750, 6880]], 'calle': 'Av. Millán', 'norte': 234.5, 'lat': -34.86, 'lon': -56.19, 'huso': -3, 'niveles': indice}, open(os.path.join(OUT, 'niveles.json'), 'w'), ensure_ascii=False, indent=1)

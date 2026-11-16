@@ -13,6 +13,9 @@ las ubicaciones.
   proyecto vienen ocultos (hoy, el edificio nuevo del fondo; en su lugar aparece la cancha
   techada actual). Lo oculto desaparece de la planta, la isométrica, la circulación, el sol,
   el folleto y el PDF. Se definen en `EDIFICIOS`, al principio de `tools/convertir_plano.py`.
+- **Notas del plano**: la casilla «Notas» muestra sobre la planta las referencias escritas en el
+  DWG (a construir, a demoler, a desmontar, existente, portones, pavimentos…). De ahí salen los
+  estados de cada construcción: proyecto (oculta por defecto) o existente a demoler (visible).
 - **Dibujo de espacios**: se dibujan espacios propios con Rectángulo o Polígono (se pegan a
   las esquinas de los muros) y con Editar forma se corrige cualquiera, incluso los del plano:
   mover esquinas, agregar o quitar, desplazarlo entero, renombrarlo o quitarlo. Siempre se

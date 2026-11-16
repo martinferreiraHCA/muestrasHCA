@@ -30,15 +30,17 @@ export async function cargarNivel(info) {
   const n = {
     id: d.id, nombre: d.nombre, ancho: d.ancho / 100, alto: d.alto / 100,
     muros: aMetros(d.muros), aberturas: aMetros(d.aberturas), barreras: aMetros(d.barreras || []), pisos: d.pisos || null,
+    notas: (d.notas || []).map(q => ({ x: q.x / 100, y: q.y / 100, t: q.t })),
     edif: d.edif || null, huellasEdif: d.huellasEdif || [],
     huellas: (d.huellas || []).map(h => h.map(p => [p[0] / 100, p[1] / 100])), arboles: (d.arboles || []).map(a => a.map(v => v / 100)), detalle: aMetros(d.detalle),
     locales: d.locales.map(l => ({
-      id: l.id, nombre: l.nombre, auto: !!l.auto, exterior: !!l.exterior, edif: l.edif ?? 255, sin: l.sin || null, area: l.area,
+      id: l.id, nombre: l.nombre, auto: !!l.auto, exterior: !!l.exterior, edif: l.edif ?? 255, sin: l.sin || null, con: l.con || null, area: l.area,
       poly: l.poly.map(p => [p[0] / 100, p[1] / 100]),
     })),
   };
   n.paths = { muros: aPath(n.muros), aberturas: aPath(n.aberturas), detalle: aPath(n.detalle) };
-  n.locales.forEach(l => { [l.cx, l.cy] = centroide(l.poly); });
+  // punto del rótulo: viene calculado en los datos (el más alejado de los bordes); si falta, el centroide
+  n.locales.forEach((l, i) => { const o = d.locales[i]; if (o.cx != null) { l.cx = o.cx / 100; l.cy = o.cy / 100; } else [l.cx, l.cy] = centroide(l.poly); });
   cache.set(info.id, n);
   return n;
 }
@@ -55,7 +57,7 @@ export function nivelVisible(n, proy) {
   const ids = edificiosOcultos(proy), oc = new Set(ids.map(id => geo.edificios.findIndex(e => e.id === id)).filter(i => i >= 0));
   const clave = n.id + '|' + [...oc].sort().join();
   if (filtrados.has(clave)) return filtrados.get(clave);
-  const extra = l => !l.sin || ids.includes(l.sin);          // p. ej. la cancha techada actual, si se oculta el edificio nuevo
+  const extra = l => (!l.sin || ids.includes(l.sin)) && (!l.con || !ids.includes(l.con));          // p. ej. la cancha techada actual, si se oculta el edificio nuevo
   let f;
   if (!oc.size || !n.edif) f = { ...n, locales: n.locales.filter(extra) };
   else {

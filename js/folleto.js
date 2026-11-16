@@ -155,7 +155,7 @@ export function generarFolleto(nivel, suelo, proy, opciones = {}) {
     if (idsDest.has(l.id) || !visible(l.cx, l.cy)) continue;
     const xs = l.poly.map(q => q[0]), ancho = (Math.max(...xs) - Math.min(...xs)) * k, t = l.nombre.replace(/\s*\(.*\)/, '').toUpperCase();
     if (t.length * fPeq * 0.72 > ancho * 1.1) continue;
-    const [cx, cy] = centroide(l.poly);
+    const cx = l.cx, cy = l.cy;
     rot.push(`<text x="${X(cx)}" y="${Y(cy)}" text-anchor="middle" dominant-baseline="middle" font-family="${FUENTE}" font-size="${n1(fPeq)}" font-weight="600" letter-spacing="${n1(fPeq * 0.14)}" fill="${T.tinta}" fill-opacity="0.5">${esc(t)}</text>`);
   }
 

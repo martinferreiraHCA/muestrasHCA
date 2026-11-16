@@ -3,7 +3,7 @@ import { proyecto, marcar, avisar, uid, catalogo, itemDesdeTipo } from './estado
 import { espaciosDe, puntoEnPoly, esquinas, aLocal, esRedondo, areaTrabajo, ajustarTexto } from './niveles.js';
 
 export const ui = {
-  herramienta: 'mover', seleccion: new Set(), iman: true, detalle: true,
+  herramienta: 'mover', seleccion: new Set(), iman: true, detalle: true, notas: false,
   activo: null,                        // id del espacio cuya forma se está editando
   capaPantalla: null,
   capa: null, ocultar: null,           // extras que dibuja la simulación de circulación
@@ -186,6 +186,15 @@ function dibujar() {
     const { a, b } = accion; ctx.fillStyle = 'rgba(31,78,156,.12)'; ctx.strokeStyle = ACENTO; ctx.lineWidth = 2 * px;
     ctx.fillRect(a[0], a[1], b[0] - a[0], b[1] - a[1]); ctx.strokeRect(a[0], a[1], b[0] - a[0], b[1] - a[1]);
     cota(a, [b[0], a[1]]); cota([b[0], a[1]], b);
+  }
+  if (ui.notas && k > 3.5) {          // referencias escritas en el plano (a construir, a demoler, existente…)
+    const tam = Math.max(10 * px, Math.min(0.5, 11.5 * px));
+    ctx.font = `italic 600 ${tam}px system-ui, sans-serif`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    for (const q of n.notas) {
+      const w = ctx.measureText(q.t).width;
+      ctx.fillStyle = 'rgba(255,248,225,.92)'; ctx.fillRect(q.x - 3 * px, q.y - tam * 0.7, w + 6 * px, tam * 1.4);
+      ctx.fillStyle = '#b45309'; ctx.fillText(q.t, q.x, q.y);
+    }
   }
   const its = itemsNivel();
   for (const it of its) if (!ui.ocultar?.(it)) dibujarItem(ctx, it, k, ui.seleccion.has(it.id));

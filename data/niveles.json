@@ -3,22 +3,38 @@
   {
    "id": "noroeste",
    "nombre": "Edificio noroeste (laboratorio y aulas)",
-   "proyecto": false
+   "proyecto": false,
+   "demoler": false
   },
   {
    "id": "norte",
    "nombre": "Edificio norte (biblioteca y aulas)",
-   "proyecto": false
+   "proyecto": false,
+   "demoler": false
+  },
+  {
+   "id": "obras",
+   "nombre": "Rampas y pasarela (a construir)",
+   "proyecto": true,
+   "demoler": false
   },
   {
    "id": "casona",
    "nombre": "Casona",
-   "proyecto": false
+   "proyecto": false,
+   "demoler": false
   },
   {
    "id": "fondo",
    "nombre": "Edificio nuevo del fondo (auditorio, comedor y gimnasio)",
-   "proyecto": true
+   "proyecto": true,
+   "demoler": false
+  },
+  {
+   "id": "aulas2010",
+   "nombre": "Aulas y comedor de 2010",
+   "proyecto": false,
+   "demoler": true
   }
  ],
  "predio": [
