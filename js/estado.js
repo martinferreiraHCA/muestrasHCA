@@ -31,7 +31,7 @@ export const uid = () => Math.random().toString(36).slice(2, 10);
 
 function proyectoNuevo(nombre = 'Muestra sin nombre') {
   return {
-    id: uid(), nombre, fecha: new Date().toISOString().slice(0, 10), nivel: 'pb', altura: 3,
+    id: uid(), nombre, fecha: new Date().toISOString().slice(0, 10), nivel: 'pb', altura: 3, horaInicio: '', horaFin: '',
     espacios: [],          // ids de espacios elegidos (de cualquier nivel)
     propios: [],           // espacios dibujados: {id, nivel, nombre, poly:[[x,y]…] en metros}
     formas: {},            // id de espacio del plano -> contorno corregido por el usuario

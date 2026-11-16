@@ -23,6 +23,10 @@ las ubicaciones.
   recorren las paradas (stands y mesas con nombre) y se ve en vivo por dónde pasan, dónde se
   aglomeran y cuánto tardan. Compara el recorrido libre con uno guiado de sentido único y
   dibuja el orden sugerido. También se pueden poner personas a mano.
+- **Entrada, salida y horario**: en la muestra se cargan la hora de inicio y de fin y se marcan
+  la entrada y la salida con un clic en el plano. La simulación reparte la llegada de los
+  visitantes en ese horario, admite un tope de tiempo de visita por persona, e informa el
+  tiempo de recorrido, el máximo de personas a la vez y si el horario alcanza.
 - **PDF**: una página por nivel con la planta a escala, la vista isométrica, el mapa de
   circulación simulado y el listado de elementos y nombres.
 - Las muestras se guardan solas en el navegador y se pueden exportar/importar como archivo.

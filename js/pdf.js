@@ -34,7 +34,9 @@ export function generarPDF(proy, niveles, op) {
     doc.text(proy.nombre || 'Muestra', M, M + 6);
     doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(102, 112, 133);
     doc.text(sub, M, M + 12, { maxWidth: PW - 2 * M - 40 });
-    if (proy.fecha) doc.text(fechaLinda(proy.fecha), PW - M, M + 6, { align: 'right' });
+    const hora = proy.horaInicio && proy.horaFin ? `${proy.horaInicio} a ${proy.horaFin} h` : proy.horaInicio ? `${proy.horaInicio} h` : '';
+    const cuando = [fechaLinda(proy.fecha), hora].filter(Boolean).join('  ·  ');
+    if (cuando) doc.text(cuando, PW - M, M + 6, { align: 'right' });
     doc.setDrawColor(217, 221, 227); doc.setLineWidth(0.2); doc.line(M, M + 15, PW - M, M + 15);
   };
 

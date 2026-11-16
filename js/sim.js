@@ -8,7 +8,8 @@ const CH = 0.5;           // celda del mapa de calor (m)
 const DT = 0.12;          // paso de simulación (s)
 const AGLOM = 2;          // personas/m² a partir de las cuales se considera aglomeración
 
-export const SIM_DEF = { visitantes: 80, porMinuto: 20, permanencia: 45, paradas: 0, modo: 'libre', velocidad: 1.2 };
+// llegada: minutos durante los que van entrando los visitantes; tiempoVisita: tope por persona en minutos (0 = sin tope)
+export const SIM_DEF = { visitantes: 80, porMinuto: 20, llegada: 0, tiempoVisita: 0, permanencia: 45, paradas: 0, modo: 'libre', velocidad: 1.2 };
 const FIJOS = ['mesa', 'mesa-redonda', 'caja', 'cilindro', 'panel', 'banco', 'zona'];
 export const esEntrada = it => it.tipo === 'entrada';
 export const esSalida = it => it.tipo === 'salida';
@@ -73,6 +74,7 @@ export class Simulacion {
     if (!this.falta && this.p.modo === 'guiado' && this.paradas.length) this.#planificar();
 
     this.t = 0; this.agentes = []; this.creados = 0; this.fin = [];
+    this.maxAdentro = 0; this.apurados = 0; this.tUltimo = 0;
     this.densMax = 0; this.tAglom = 0; this.tTotal = 0; this.terminada = false;
     for (const [x, y] of this.manuales) this.#nuevo(x, y);
   }
@@ -200,8 +202,11 @@ export class Simulacion {
     // vecinos por grilla de 1 m
     const cubos = new Map(), clave = (x, y) => Math.floor(x) * 4096 + Math.floor(y);
     for (const a of this.agentes) { const k = clave(a.x, a.y); (cubos.get(k) || cubos.set(k, []).get(k)).push(a); }
-    const quedan = [];
+    const quedan = [], tope = P.tiempoVisita * 60;
+    if (this.agentes.length > this.maxAdentro) this.maxAdentro = this.agentes.length;
     for (const a of this.agentes) {
+      // se le acabó el tiempo de visita: deja lo que falta y va a la salida
+      if (tope && a.estado !== 'sale' && a.t > tope) { a.faltan = 0; this.apurados++; this.#elegir(a); }
       let n = 1, rx = 0, ry = 0;
       for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
         const l = cubos.get(clave(a.x + dx, a.y + dy)); if (!l) continue;
@@ -257,6 +262,7 @@ export class Simulacion {
       }
       quedan.push(a);
     }
+    if (quedan.length < this.agentes.length) this.tUltimo = this.t;
     this.agentes = quedan;
     if ((this.creados >= P.visitantes && !quedan.length) || this.t > 3 * 3600) this.terminada = true;
   }
@@ -270,7 +276,7 @@ export class Simulacion {
     return {
       t: this.t, adentro: this.agentes.length, terminaron: f.length, total: this.p.visitantes + this.manuales.length,
       tiempoProm: prom, densMax: this.densMax, pctAglom: this.tTotal ? 100 * this.tAglom / this.tTotal : 0,
-      paradas: this.paradas.length, terminada: this.terminada,
+      paradas: this.paradas.length, terminada: this.terminada, maxAdentro: this.maxAdentro, apurados: this.apurados, tUltimo: this.tUltimo,
       critico: pi >= 0 && peor > 5 ? [this.x0 + (pi % this.hw + 0.5) * CH, this.y0 + (Math.floor(pi / this.hw) + 0.5) * CH] : null,
     };
   }

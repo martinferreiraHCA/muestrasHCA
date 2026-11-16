@@ -88,7 +88,26 @@ const verIso = si => ver(si ? 'iso' : 'plano');
 
 // ---------- simulación de circulación ----------
 let sim = null, simCorre = false, simRaf = 0, simPrevio = 0, simComp = null, tPanelSim = 0;
-const parSim = () => ({ ...SIM_DEF, ...(proyecto().sim || {}) });
+/** Minutos que dura la muestra según el horario cargado (0 si no hay horario). */
+function duracionMuestra(p = proyecto()) {
+  const m = h => { const [a, b] = (h || '').split(':').map(Number); return isFinite(a) && isFinite(b) ? a * 60 + b : null; };
+  const i = m(p.horaInicio), f = m(p.horaFin);
+  return i === null || f === null ? 0 : (f - i + 1440) % 1440;
+}
+/** Hora de reloj a `seg` segundos del comienzo de la muestra (o mm:ss si no hay horario). */
+function reloj(seg) {
+  const [a, b] = (proyecto().horaInicio || '').split(':').map(Number);
+  if (!isFinite(a) || !isFinite(b)) return mmss(seg);
+  const t = Math.round(a * 60 + b + seg / 60) % 1440;
+  return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
+}
+function parSim() {
+  const q = { ...SIM_DEF, ...(proyecto().sim || {}) };
+  // si no se indicó, la gente va llegando durante toda la muestra (menos el cuarto final)
+  if (!q.llegada) { const d = duracionMuestra(); q.llegada = d ? Math.max(1, Math.round(d * 0.75)) : Math.max(1, Math.round(q.visitantes / 20)); q.llegadaAuto = true; }
+  q.porMinuto = q.visitantes / q.llegada;
+  return q;
+}
 function simCrear() {
   simPausar(); sim = nivel ? new Simulacion(nivel, proyecto(), parSim()) : null; simComp = null;
   if (vistaSim) { pintarPanel(); P.pedir(); }
@@ -116,16 +135,23 @@ const nivelDens = d => d < 1 ? 'cómoda' : d < 2 ? 'aceptable' : d < 3.5 ? 'apre
 function pintarEstadoSim() {
   const el = $('simEstado'); if (!el || !sim) return;
   if (sim.falta) { el.innerHTML = `<p class="ayuda alerta">${esc(sim.falta)}</p>`; return; }
-  const r = sim.resumen();
+  const r = sim.resumen(), dur = duracionMuestra(), hay = !!proyecto().horaInicio;
+  const tarde = dur && r.terminada ? r.tUltimo / 60 - dur : 0;
   el.innerHTML = `<table class="resumen">
-    <tr><td>Tiempo simulado</td><td>${mmss(r.t)}</td></tr>
+    <tr><td>${hay ? 'Hora simulada' : 'Tiempo simulado'}</td><td>${reloj(r.t)}</td></tr>
     <tr><td>Personas adentro</td><td>${r.adentro}</td></tr>
+    <tr><td>Máximo a la vez</td><td>${r.maxAdentro}</td></tr>
     <tr><td>Ya salieron</td><td>${r.terminaron} de ${r.total}</td></tr>
-    <tr><td>Tiempo medio de visita</td><td>${r.terminaron ? mmss(r.tiempoProm) : '—'}</td></tr>
+    <tr><td>Recorrido por persona</td><td>${r.terminaron ? mmss(r.tiempoProm) + ' min' : '—'}</td></tr>
     <tr><td>Densidad máxima</td><td>${r.densMax.toFixed(1).replace('.', ',')} pers./m² <small>(${nivelDens(r.densMax)})</small></td></tr>
     <tr><td>Tiempo en aglomeración</td><td>${r.pctAglom.toFixed(1).replace('.', ',')} %</td></tr>
+    ${r.terminada ? `<tr><td>Sale la última persona</td><td>${hay ? reloj(r.tUltimo) : mmss(r.tUltimo)}</td></tr>` : ''}
   </table>
-  ${r.terminada && r.critico ? '<p class="ayuda">El círculo rojo punteado marca el punto más congestionado: conviene ensanchar ese paso o separar los puestos cercanos.</p>' : ''}
+  ${r.terminada && dur ? (tarde > 1
+    ? `<p class="ayuda alerta">No alcanza el horario: la última persona sale ${Math.round(tarde)} min después del cierre. Probá con menos visitantes, menos tiempo por parada o más duración.</p>`
+    : `<p class="ayuda">El horario alcanza: todos terminan ${Math.round(-tarde)} min antes del cierre.</p>`) : ''}
+  ${r.apurados ? `<p class="ayuda alerta">${r.apurados} persona${r.apurados > 1 ? 's no llegaron' : ' no llegó'} a ver todas las paradas en el tiempo de visita.</p>` : ''}
+  ${r.terminada && r.critico && r.pctAglom > 2 ? '<p class="ayuda">El círculo rojo punteado marca el punto más congestionado: conviene ensanchar ese paso o separar los puestos cercanos.</p>' : ''}
   ${sim.paradas.length ? `<p class="ayuda" style="margin-top:8px">Visitas por parada: ${sim.paradas.map(p => `${esc(p.nombre)} <b>${p.visitas}</b>`).join(' · ')}</p>` : ''}`;
 }
 function pintarPanelSim() {
@@ -144,15 +170,17 @@ function pintarPanelSim() {
     <section><h2>Parámetros</h2>
       <div class="fila2">
         <label>Visitantes<input id="sVis" type="number" min="1" max="600" value="${p.visitantes}"></label>
-        <label>Entran por minuto<input id="sMin" type="number" min="1" max="300" value="${p.porMinuto}"></label>
+        <label title="Minutos durante los que va entrando la gente">Llegan durante (min)<input id="sLle" type="number" min="1" max="1440" value="${p.llegada}"></label>
         <label>Segundos por parada<input id="sPer" type="number" min="0" max="900" value="${p.permanencia}"></label>
         <label title="0 = visitan todas">Paradas por persona<input id="sPar" type="number" min="0" max="99" value="${p.paradas}"></label>
+        <label title="Tope de tiempo por persona; 0 = sin tope">Tiempo de visita (min)<input id="sTie" type="number" min="0" max="600" value="${p.tiempoVisita}"></label>
+        <label>Entran por minuto<input type="text" disabled value="${(Math.round(p.porMinuto * 10) / 10).toString().replace('.', ',')}"></label>
       </div>
       <label>Recorrido<select id="sModo">
         <option value="libre" ${p.modo === 'libre' ? 'selected' : ''}>Libre: cada uno va al puesto más cercano y menos lleno</option>
         <option value="guiado" ${p.modo === 'guiado' ? 'selected' : ''}>Guiado: sentido único, todos en el mismo orden</option>
       </select></label>
-      <p class="ayuda">En «Paradas por persona», 0 significa que visitan todas.</p>
+      <p class="ayuda">${duracionMuestra() ? `La muestra dura ${duracionMuestra()} min (${esc(proyecto().horaInicio)} a ${esc(proyecto().horaFin)}).` : 'Cargá el horario de la muestra (a la izquierda) para saber si el tiempo alcanza.'} En «Paradas por persona» y «Tiempo de visita», 0 significa sin límite.</p>
     </section>
     <section><h2>Resultado</h2><div id="simEstado"></div></section>
     ${simComp ? `<section><h2>Comparación</h2>
@@ -162,8 +190,8 @@ function pintarPanelSim() {
         <tr><td>Densidad máx.</td><td>${simComp.libre.densMax.toFixed(1)}</td><td>${simComp.guiado.densMax.toFixed(1)}</td></tr>
         <tr><td>En aglomeración</td><td>${simComp.libre.pctAglom.toFixed(1)} %</td><td>${simComp.guiado.pctAglom.toFixed(1)} %</td></tr>
       </table><p class="ayuda" style="margin-top:8px">${esc(simComp.texto)}</p></section>` : ''}`;
-  const campo = (id, k, min, max) => { $(id).onchange = e => { proyecto().sim = { ...parSim(), [k]: k === 'modo' ? e.target.value : num(e.target.value, min, max, SIM_DEF[k]) }; avisar('sim'); }; };
-  campo('sVis', 'visitantes', 1, 600); campo('sMin', 'porMinuto', 1, 300); campo('sPer', 'permanencia', 0, 900); campo('sPar', 'paradas', 0, 99); campo('sModo', 'modo');
+  const campo = (id, k, min, max) => { $(id).onchange = e => { proyecto().sim = { ...(proyecto().sim || {}), [k]: k === 'modo' ? e.target.value : num(e.target.value, min, max, SIM_DEF[k]) }; avisar('sim'); }; };
+  campo('sVis', 'visitantes', 1, 600); campo('sLle', 'llegada', 1, 1440); campo('sTie', 'tiempoVisita', 0, 600); campo('sPer', 'permanencia', 0, 900); campo('sPar', 'paradas', 0, 99); campo('sModo', 'modo');
   pintarEstadoSim();
 }
 async function simComparar() {
@@ -181,7 +209,7 @@ async function simComparar() {
   simComp = { libre, guiado, mejor, texto: parejo
     ? 'Las dos formas de recorrer dan una circulación parecida con esta distribución. Para mejorarla, probá separar más los puestos o mover la entrada y la salida.'
     : `Con esta distribución circula mejor el recorrido ${mejor}: ${m.pctAglom.toFixed(1)} % del tiempo en aglomeración contra ${otro.pctAglom.toFixed(1)} %. Se dejó elegido ese recorrido.` };
-  proyecto().sim = { ...parSim(), modo: mejor };
+  proyecto().sim = { ...(proyecto().sim || {}), modo: mejor };
   const comp = simComp; avisar('sim'); simComp = comp;
   sim = new Simulacion(nivel, proyecto(), parSim()); sim.completar();
   pintarPanel(); P.pedir();
@@ -192,7 +220,8 @@ function pintarBarra() {
   const p = proyecto();
   $('selProyecto').innerHTML = E.estado.proyectos.map(q => `<option value="${q.id}" ${q.id === p.id ? 'selected' : ''}>${esc(q.nombre || 'Sin nombre')}</option>`).join('');
   if (document.activeElement !== $('inNombre')) $('inNombre').value = p.nombre;
-  $('inFecha').value = p.fecha || ''; if (document.activeElement !== $('inAltura')) $('inAltura').value = p.altura;
+  $('inFecha').value = p.fecha || ''; $('inInicio').value = p.horaInicio || ''; $('inFin').value = p.horaFin || '';
+  if (nivel) { const its = P.itemsNivel(); $('nEntradas').textContent = its.filter(esEntrada).length || ''; $('nSalidas').textContent = its.filter(esSalida).length || ''; } if (document.activeElement !== $('inAltura')) $('inAltura').value = p.altura;
   $('btnDeshacer').disabled = !E.puedeDeshacer(); $('btnRehacer').disabled = !E.puedeRehacer();
 }
 
@@ -396,8 +425,8 @@ async function exportarPDF() {
       const img = P.imagen(); [ui.capa, ui.ocultar] = antes; antes[2].forEach(i => ui.seleccion.add(i)); P.pedir();
       const s = sim.resumen(), q = parSim();
       if (img) circ = { ...img, nivel: nivel.nombre, lineas: [
-        `${s.total} visitantes · ${q.porMinuto} por minuto · ${q.permanencia} s por parada · recorrido ${q.modo}`,
-        `Tiempo simulado ${mmss(s.t)} · visita media ${s.terminaron ? mmss(s.tiempoProm) : '—'} · densidad máxima ${s.densMax.toFixed(1).replace('.', ',')} pers./m² (${nivelDens(s.densMax)}) · ${s.pctAglom.toFixed(1).replace('.', ',')} % del tiempo en aglomeración`] };
+        `${s.total} visitantes que llegan durante ${q.llegada} min · ${q.permanencia} s por parada${q.tiempoVisita ? ` · hasta ${q.tiempoVisita} min por persona` : ''} · recorrido ${q.modo} · máximo ${s.maxAdentro} personas a la vez`,
+        `${p.horaInicio ? `Sale la última persona ${reloj(s.tUltimo)}` : `Duración ${mmss(s.tUltimo)}`} · recorrido por persona ${s.terminaron ? mmss(s.tiempoProm) + ' min' : '—'} · densidad máxima ${s.densMax.toFixed(1).replace('.', ',')} pers./m² (${nivelDens(s.densMax)}) · ${s.pctAglom.toFixed(1).replace('.', ',')} % del tiempo en aglomeración`] };
     }
     const doc = generarPDF(p, niveles, { circ, formato: r.formato, iso: !!captura, lista: r.lista, detalle: r.detalle, capturaIso: captura });
     if (captura) { iso.actualizarIso(nivel, p, opIso()); if (vistaIso) iso.encuadrar(true); }
@@ -445,6 +474,10 @@ function conectar() {
   $('btnPDF').onclick = exportarPDF;
   $('inNombre').oninput = e => { proyecto().nombre = e.target.value; avisar('nombre'); };
   $('inFecha').onchange = e => { proyecto().fecha = e.target.value; avisar('nombre'); };
+  $('inInicio').onchange = e => { proyecto().horaInicio = e.target.value; avisar('sim'); };
+  $('inFin').onchange = e => { proyecto().horaFin = e.target.value; avisar('sim'); };
+  const marcarPaso = async h => { if (vistaIso) await ver('plano'); ui.alHerramienta(h); };
+  $('btnEntrada').onclick = () => marcarPaso('entrada'); $('btnSalida').onclick = () => marcarPaso('salida');
   $('inAltura').onchange = e => { marcar(); proyecto().altura = num(e.target.value, 1, 8, 3); avisar('altura'); };
   $('inBuscarEsp').oninput = pintarEspacios;
   $('btnRestaurarEsp').onclick = async () => {

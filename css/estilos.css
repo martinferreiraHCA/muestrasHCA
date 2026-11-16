@@ -115,3 +115,6 @@ dialog .menu button { text-align: left; padding: 8px 10px; }
 .resumen.comp td { text-align: right; }
 .resumen.comp td:first-child { text-align: left; }
 .resumen.comp tr:first-child td { font-weight: 600; color: var(--suave); font-size: 12px; }
+
+.botones .chip:empty { display: none; }
+.panel input:disabled { background: #f3f4f6; color: var(--suave); }
