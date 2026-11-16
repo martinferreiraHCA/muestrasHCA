@@ -9,11 +9,16 @@ polígonos de los salones detectados automáticamente.
 """
 import json, math, re, sys, os, unicodedata
 import numpy as np, cv2
+from scipy import ndimage
+from skimage.segmentation import watershed
+from skimage.morphology import h_maxima
 
 SRC, BLK, OUT = sys.argv[1:4]
 DBG = sys.argv[4] if len(sys.argv) > 4 else None
 
 # Recortes de la lámina 1 del plano (coordenadas del dibujo, en metros).
+H_MAX = 0.30    # (m) diferencia mínima de ancho para que un ensanche cuente como ambiente aparte
+FUSION = 0.80   # dos zonas se unen si el paso entre ellas mide al menos esta fracción de la más angosta
 NIVELES = [
     ('ss', 'Subsuelo', (1100, 86.5, 1136, 122)),
     ('pb', 'Planta baja', (1138, 88, 1268, 160)),
@@ -136,16 +141,43 @@ for line in open(SRC):
     emit(e, I, None)
 print({k: len(v) for k, v in segs.items()}, 'puertas', len(puertas), 'textos', len(textos))
 
-# Espacios exteriores trazados a mano sobre el plano (metros, mismo origen que el JSON del nivel).
-# No tienen muros que los encierren, así que no se pueden detectar; en la app se pueden corregir.
-EXTERIORES = {
-    'pb': [
-        ('Patio central', [(41, 23), (69.5, 23), (69.5, 30), (49, 30), (49, 45.2), (41, 45.2)]),
-        ('Patio este', [(77.6, 23.2), (102, 23.2), (103, 28), (100, 33), (96, 41.5), (82, 41.5), (79.5, 33), (77.6, 30)]),
-        ('Cancha de fútbol', [(16.2, 31.1), (35.9, 31.1), (35.9, 41.8), (16.2, 41.8)]),
-        ('Explanada de hormigón', [(7, 4), (19.6, 4), (19.6, 29.3), (7, 29.3)]),
-        ('Acceso techado (auditorio y comedor)', [(24.7, 45.8), (39.1, 45.8), (39.1, 51.6), (24.7, 51.6)]),
-    ],
+# ---------------------------------------------------------------------------------------------
+# Curado a mano, hecho revisando la partición automática contra el plano (metros, origen del nivel).
+# - EDIFICIOS: huellas aproximadas; los ambientes sin rótulo que caen fuera se descartan (canteros,
+#   retiros, veredas), salvo los que se agregan abajo.
+# - quitar: rectángulos (x0, y0, x1, y1) cuyo contenido se descarta (vacíos de doble altura, zonas
+#   que se reemplazan por un contorno trazado a mano).
+# - agregar: (nombre, contorno, es_exterior). Para lo que no tiene muros que lo encierren.
+# - renombrar: ((x, y) de un punto interior, nombre) para halls y pasillos sin rótulo en el plano.
+EDIFICIOS = [(19.5, 6.5, 52.6, 23.6), (53.4, 3.7, 98.8, 23.3), (50.4, 32.2, 73.6, 61.2), (9.5, 45.2, 39.6, 64.2)]
+CURADO = {
+    'pb': {
+        'quitar': [(24.6, 45.6, 39.3, 51.8), (28.5, 51.8, 39.0, 63.9), (71.5, 3.5, 96.5, 7.2)],
+        'agregar': [
+            ('Hall 1', [(24.7, 45.8), (39.1, 45.8), (39.1, 51.6), (24.7, 51.6)], False),
+            ('Comedor 2', [(28.7, 51.9), (38.9, 51.9), (38.9, 63.8), (28.7, 63.8)], False),
+            ('Patio central', [(41, 23), (45.4, 23), (45.4, 17.6), (69, 17.6), (69, 20.4), (75.6, 20.4), (75.6, 23.2), (77.4, 23.2),
+                               (77.4, 32.5), (49, 32.5), (49, 45.2), (41, 45.2)], True),
+            ('Patio este', [(77.6, 23.2), (102, 23.2), (103, 28), (100, 33), (96, 41.5), (82, 41.5), (79.5, 33), (77.6, 30)], True),
+            ('Pasaje entre edificios', [(52.3, 8.3), (58.3, 8.3), (58.3, 17.4), (52.3, 17.4)], True),
+            ('Cancha de fútbol', [(16.2, 31.1), (35.9, 31.1), (35.9, 41.8), (16.2, 41.8)], True),
+            ('Explanada de hormigón', [(7, 4), (19.6, 4), (19.6, 29.3), (7, 29.3)], True),
+            ('Patio abierto (frente de la casona)', [(39.5, 61.4), (77, 61.4), (77, 64.5), (39.5, 64.5)], True),
+            ('Juegos infantiles', [(81, 55.3), (91.5, 55.3), (91.5, 65.8), (81, 65.8)], True),
+        ],
+        'renombrar': [((80, 16.3), 'Hall aulas 1 a 6')],
+    },
+    'p1': {
+        'quitar': [(24.6, 45.6, 39.3, 51.8), (71.5, 3.5, 96.5, 7.2)],          # vacío sobre el Hall 1 y retiro del fondo
+        'renombrar': [((33, 54), 'Antesala aulas 18 a 20'), ((20, 54.5), 'Pasillo aulas 12 a 17'), ((75, 15.5), 'Hall aulas 28 a 39'),
+                      ((40, 13.5), 'Hall aulas 40 a 43'), ((32.5, 15), 'Hall escalera aulas 44 a 47'), ((69, 46), 'Terraza de la casona')],
+    },
+    'p2': {
+        'quitar': [(10, 45.9, 39.3, 64)],
+        'agregar': [('Gimnasio', [(10.1, 46), (39.2, 46), (39.2, 63.9), (10.1, 63.9)], False)],
+        'renombrar': [((80, 15.7), 'Hall aulas 54 a 59'), ((24, 38.3), 'Gradas del gimnasio'), ((24, 41), 'Pasillo de vestuarios')],
+        'edificios': [(14.5, 36.3, 39.6, 46)],
+    },
 }
 
 LOCAL = re.compile(r'^(AULA|SS\.?HH|OFICINA|HALL|LABORATORIO|ADMINISTRACI|COCINA|COMEDOR|SAL[OÓ]N|SALA|AUDITORIO|DEP[OÓ]SITO|RECEPCI|DIRECCI|VESTUARIO|PORTER|BIBLIOTECA|GALER|PATIO|AREA DEPORTIVA|CANCHA|AZOTEA|EXPLANADA|GIMNASIO|ENFERMER|SECRETAR|TALLER|CANTINA|CAPILLA|SUM\b)', re.I)
@@ -187,6 +219,10 @@ for nid, nombre, (ax, ay, bx, by) in NIVELES:
             if key in visto: continue
             visto.add(key); out += q
         return out
+    # líneas larguísimas en la capa de muros son retiros/ejes, no paredes
+    largo = lambda s: math.hypot(s[2]-s[0], s[3]-s[1])
+    S['d'] += [s for s in S['m'] if largo(s) > 45]
+    S['m'] = [s for s in S['m'] if largo(s) <= 45]
     # --- detección de locales ---
     # Imagen de barreras (4 cm por píxel): muros + aberturas pegadas a un muro + cierre de puertas.
     RES = 0.04
@@ -198,10 +234,14 @@ for nid, nombre, (ax, ay, bx, by) in NIVELES:
     for x1, y1, x2, y2 in S['a']: cv2.line(ab, px(x1, y1), px(x2, y2), 255, 2)
     cerca = cv2.dilate(img, np.ones((9, 9), np.uint8))
     na, la, sa, _ = cv2.connectedComponentsWithStats(ab, connectivity=8)
-    ok = np.zeros(na, bool)
+    # Aberturas que cuentan como cerramiento: las piezas chicas pegadas a un muro (puertas, ventanas)
+    # y, de las piezas grandes, solo lo que está a menos de 3 m de un muro (frentes vidriados entre
+    # columnas). Así no entran las grillas de piso ni los linderos, que comparten capa.
+    toca = np.zeros(na, bool); chica = np.zeros(na, bool)
     for i in np.unique(la[(cerca > 0) & (ab > 0)]):
-        if i and max(sa[i, 2], sa[i, 3])*RES < 7.5: ok[i] = True
-    ab_ok = ok[la]
+        if i: toca[i] = True; chica[i] = max(sa[i, 2], sa[i, 3])*RES < 7.5
+    lejos = cv2.distanceTransform((img == 0).astype(np.uint8), cv2.DIST_L2, 3)*RES
+    ab_ok = chica[la] | (toca[la] & (lejos < 3.0))
     img |= (ab_ok*255).astype(np.uint8)
     pu = [(h, math.hypot(a[0]-h[0], a[1]-h[1]), a, b) for h, a, b in puertas if ax <= h[0] <= bx and ay <= h[1] <= by]
     for h, r, a, b in pu:
@@ -234,8 +274,7 @@ for nid, nombre, (ax, ay, bx, by) in NIVELES:
         if not any(abs(e[0]-u[0]) < 0.6 and abs(e[1]-u[1]) < 0.6 for u in uniq): uniq.append(e)
     etiquetas = uniq
 
-    # 1) Locales con etiqueta: desde el texto se buscan los cuatro muros que lo rodean
-    #    (resistente a puertas abiertas) y se toma la forma real dentro de ese rectángulo.
+    # Respaldo para locales con rótulo que la partición no logra cerrar: buscar sus cuatro muros.
     M = lambda m: int(round(m/RES))
     def ajustar(sx, sy):
         if not (5 < sx < iw-5 and 5 < sy < ih-5): return None
@@ -283,57 +322,110 @@ for nid, nombre, (ax, ay, bx, by) in NIVELES:
         reg = cv2.morphologyEx(reg, cv2.MORPH_OPEN, np.ones((9, 9), np.uint8))
         reg = cv2.dilate(reg, np.ones((3, 3), np.uint8))
         return x0, y0, reg
+    # Partición completa de la planta en ambientes (segmentación por transformada de distancia):
+    # cada ambiente es una "cuenca" del espacio libre y los pasos angostos (puertas, vanos)
+    # son las divisorias. Dos cuencas unidas por un paso casi tan ancho como ellas son el mismo ambiente.
+    libre = (img == 0)
+    dist = cv2.distanceTransform(libre.astype(np.uint8), cv2.DIST_L2, 5)*RES
+    dsu = cv2.GaussianBlur(dist, (0, 0), 1.5)
+    _, marc = cv2.connectedComponents((h_maxima(dsu, H_MAX) > 0).astype(np.uint8))
+    lab = watershed(-dsu, marc, mask=libre)
+    nl = int(lab.max())+1
+    pico = np.zeros(nl); np.maximum.at(pico, lab.ravel(), dist.ravel())
+    pares = {}
+    for A_, B_, DA, DB in ((lab[:, :-1], lab[:, 1:], dist[:, :-1], dist[:, 1:]), (lab[:-1, :], lab[1:, :], dist[:-1, :], dist[1:, :])):
+        m = (A_ != B_) & (A_ > 0) & (B_ > 0)
+        a_, b_ = np.minimum(A_[m], B_[m]), np.maximum(A_[m], B_[m]); v = np.minimum(DA[m], DB[m])
+        clave = a_.astype(np.int64)*nl+b_
+        o = np.argsort(clave); clave, v = clave[o], v[o]
+        if len(clave):
+            ini = np.r_[0, np.flatnonzero(np.diff(clave))+1]
+            for k_, mx_ in zip(clave[ini], np.maximum.reduceat(v, ini)): pares[int(k_)] = max(pares.get(int(k_), 0), float(mx_))
+    padre = list(range(nl))
+    def raiz(i):
+        while padre[i] != i: padre[i] = padre[padre[i]]; i = padre[i]
+        return i
+    for k_, silla in sorted(pares.items(), key=lambda t: -t[1]):
+        ra, rb = raiz(k_//nl), raiz(k_ % nl)
+        if ra != rb and silla >= FUSION*min(pico[ra], pico[rb]):
+            padre[rb] = ra; pico[ra] = max(pico[ra], pico[rb])
+    lab = np.array([raiz(i) for i in range(nl)])[lab]
+    borde = set(np.unique(np.r_[lab[:3].ravel(), lab[-3:].ravel(), lab[:, :3].ravel(), lab[:, -3:].ravel()]))
     def contorno(x0, y0, reg):
         cs, _ = cv2.findContours(reg, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         if not cs: return None
-        c = max(cs, key=cv2.contourArea)
-        c = cv2.approxPolyDP(c, 2.5, True).reshape(-1, 2)
+        c = cv2.approxPolyDP(max(cs, key=cv2.contourArea), 2.2, True).reshape(-1, 2)
         if len(c) < 3: return None
         return [[cm((p[0]+x0)*RES), cm((p[1]+y0)*RES)] for p in c]
-
-    duenio = np.zeros((ih, iw), np.int32)
-    locales = []
-    usados = {}
-    prioridad = lambda e: (e[2].startswith('SS.HH'), e[3] is None)
-    for e in sorted(etiquetas, key=prioridad):
+    muro_cerca = cv2.dilate(img, np.ones((5, 5), np.uint8)) > 0
+    def dentro_e_prev(x0, y0, x1, y1, reg):
+        return any(y0 <= int(e[1]/RES) < y1 and x0 <= int(e[0]/RES) < x1 and reg[int(e[1]/RES)-y0, int(e[0]/RES)-x0] and not e[2].startswith(('SS.HH', 'Cancha', 'Patio', 'Explanada')) for e in etiquetas) and reg.sum()*RES*RES < 450
+    locales = []; usados = {}
+    ocup = np.zeros((ih, iw), bool)
+    objs = ndimage.find_objects(lab)
+    for i, sl in enumerate(objs, start=1):
+        if sl is None or i in borde: continue
+        y0, x0 = max(0, sl[0].start-3), max(0, sl[1].start-3); y1, x1 = min(ih, sl[0].stop+3), min(iw, sl[1].stop+3)
+        reg = (lab[y0:y1, x0:x1] == i).astype(np.uint8)
+        area = float(reg.sum())*RES*RES
+        if area < 2.5: continue
+        anillo = (cv2.dilate(reg, np.ones((3, 3), np.uint8)) > 0) & (reg == 0)
+        cerrado = float(muro_cerca[y0:y1, x0:x1][anillo].mean()) if anillo.any() else 0     # parte del borde que es muro
+        ext = cerrado < 0.5 or area > 450
+        if ext and not dentro_e_prev(x0, y0, x1, y1, reg): continue       # afuera: solo si tiene rótulo (azoteas, galerías)
+        reg2 = cv2.dilate(reg, np.ones((3, 3), np.uint8))
+        poly = contorno(x0, y0, reg2)
+        if not poly: continue
+        dentro_e = [e for e in etiquetas if id(e) not in usados and y0 <= int(e[1]/RES) < y1 and x0 <= int(e[0]/RES) < x1
+                    and reg2[max(0, int(e[1]/RES)-y0-6):int(e[1]/RES)-y0+7, max(0, int(e[0]/RES)-x0-6):int(e[0]/RES)-x0+7].any()]
+        mo = cv2.moments(reg); cx_, cy_ = x0+mo['m10']/mo['m00'], y0+mo['m01']/mo['m00']
+        dentro_e = [e for e in dentro_e if not ((e[2].startswith('SS.HH') and area > 22) or (e[2].startswith('Dep') and area > 60))]       # un baño no le da nombre a un hall
+        dentro_e.sort(key=lambda e: (e[2].startswith('SS.HH') and area > 15, math.hypot(e[0]/RES-cx_, e[1]/RES-cy_)))
+        for e in dentro_e: usados[id(e)] = 1
+        nom = dentro_e[0][2]+(' '+dentro_e[0][3] if dentro_e[0][3] else '') if dentro_e else None
+        ancho = 2*float(dist[y0:y1, x0:x1][reg > 0].max())
+        # punto interior para el rótulo: el más alejado de los bordes
+        dd = cv2.distanceTransform(reg, cv2.DIST_L2, 3); py_, px_ = np.unravel_index(int(dd.argmax()), dd.shape)
+        l = {'nombre': nom, 'area': round(area, 1), 'poly': poly, 'cx': cm((x0+px_)*RES), 'cy': cm((y0+py_)*RES), 'ancho': round(ancho, 1)}
+        if ext: l['exterior'] = True
+        locales.append(l)
+        ocup[y0:y1, x0:x1] |= reg > 0
+    for e in etiquetas:
+        if id(e) in usados or e[2].startswith('SS.HH'): continue
         r = ajustar(int(e[0]/RES), int(e[1]/RES))
         if not r: continue
-        x0, y0, reg = r
-        area = float(reg.sum())*RES*RES
-        if area < 2.5 or area > 450 or area < 0.55*reg.shape[0]*reg.shape[1]*RES*RES: continue
-        zona = duenio[y0:y0+reg.shape[0], x0:x0+reg.shape[1]]
-        if ((zona > 0) & (reg > 0)).sum() > 0.4*reg.sum(): continue        # ya detectado con otra etiqueta
+        x0, y0, reg = r; area = float(reg.sum())*RES*RES
+        zona = ocup[y0:y0+reg.shape[0], x0:x0+reg.shape[1]]
+        if area < 4 or area > 300 or area < 0.6*reg.shape[0]*reg.shape[1]*RES*RES or (zona & (reg > 0)).sum() > 0.25*reg.sum(): continue
         poly = contorno(x0, y0, reg)
         if not poly: continue
-        zona[(reg > 0) & (zona == 0)] = len(locales)+1
-        usados[id(e)] = 1
-        mo = cv2.moments(reg)
-        locales.append({'nombre': e[2]+(' '+e[3] if e[3] else ''), 'area': round(area, 1), 'poly': poly,
-                        'cx': cm((x0+mo['m10']/mo['m00'])*RES), 'cy': cm((y0+mo['m01']/mo['m00'])*RES)})
+        zona |= reg > 0; usados[id(e)] = 1
+        dd = cv2.distanceTransform(reg, cv2.DIST_L2, 3); py_, px_ = np.unravel_index(int(dd.argmax()), dd.shape)
+        locales.append({'nombre': e[2]+(' '+e[3] if e[3] else ''), 'area': round(area, 1), 'poly': poly, 'cx': cm((x0+px_)*RES), 'cy': cm((y0+py_)*RES), 'ancho': round(2*float(dd.max())*RES, 1)})
+    # ambientes sin rótulo en el plano: se nombran por su forma
+    cta = {}
+    for l in sorted(locales, key=lambda l: (l['cy'], l['cx'])):
+        if l['nombre']: continue
+        esb = l['area']/max(0.5, l['ancho'])**2
+        tipo = 'Exterior' if l.get('exterior') else 'Pasillo' if esb > 3.5 else 'Hall' if l['area'] >= 25 else 'Ambiente'
+        cta[tipo] = cta.get(tipo, 0)+1; l['nombre'] = f'{tipo} {cta[tipo]}'; l['auto'] = True
 
-    # 2) Espacios sin etiqueta: zonas encerradas que no pertenecen a ningún local anterior.
-    g = M(2.1)
-    cerr = img | cv2.morphologyEx(img, cv2.MORPH_CLOSE, np.ones((1, g), np.uint8)) | cv2.morphologyEx(img, cv2.MORPH_CLOSE, np.ones((g, 1), np.uint8))
-    libre = cv2.erode(255-cerr, np.ones((3, 3), np.uint8))
-    n, lab, stats, cent = cv2.connectedComponentsWithStats(libre, connectivity=4)
-    for i in range(1, n):
-        area = stats[i, cv2.CC_STAT_AREA]*RES*RES
-        x, y, w, h = stats[i, :4]
-        if area < 12 or area > 1500 or x <= 1 or y <= 1 or x+w >= iw-1 or y+h >= ih-1: continue
-        reg = (lab[y:y+h, x:x+w] == i).astype(np.uint8)
-        if ((duenio[y:y+h, x:x+w] > 0) & (reg > 0)).sum() > 0.3*reg.sum(): continue
-        reg = cv2.dilate(reg, np.ones((5, 5), np.uint8))
-        cs, _ = cv2.findContours(reg, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        per = cv2.arcLength(max(cs, key=cv2.contourArea), True)*RES
-        if 4*math.pi*area/(per*per) < 0.3: continue
-        poly = contorno(x, y, reg)
-        if poly: locales.append({'nombre': None, 'area': round(float(area), 1), 'poly': poly, 'cx': cm(cent[i][0]*RES), 'cy': cm(cent[i][1]*RES)})
-
-    for nom, pts in EXTERIORES.get(nid, []):
+    cur = CURADO.get(nid, {})
+    en = lambda l, r: r[0] <= l['cx']/100 <= r[2] and r[1] <= l['cy']/100 <= r[3]
+    edif = EDIFICIOS+cur.get('edificios', []) if nid != 'ss' else [(0, 0, 999, 999)]
+    locales = [l for l in locales if not any(en(l, r) for r in cur.get('quitar', []))
+               and (not l.get('auto') or any(en(l, r) for r in edif))]
+    for (qx, qy), nom in cur.get('renombrar', []):
+        for l in locales:
+            if cv2.pointPolygonTest(np.array(l['poly'], np.float32), (qx*100, qy*100), False) >= 0:
+                l['nombre'] = nom; l.pop('auto', None); break
+        else: print('  OJO: no hay ambiente en', (qx, qy), 'para', nom)
+    for nom, pts, ext in cur.get('agregar', []):
         pg = np.array(pts, float); xs, ys = pg[:, 0], pg[:, 1]
         ar = abs(float(np.dot(xs, np.roll(ys, -1))-np.dot(ys, np.roll(xs, -1))))/2
-        locales.append({'nombre': nom, 'area': round(ar, 1), 'poly': [[cm(x), cm(y)] for x, y in pts],
-                        'cx': cm(xs.mean()), 'cy': cm(ys.mean()), 'exterior': True})
+        l = {'nombre': nom, 'area': round(ar, 1), 'poly': [[cm(x), cm(y)] for x, y in pts], 'cx': cm(xs.mean()), 'cy': cm(ys.mean())}
+        if ext: l['exterior'] = True
+        locales.append(l)
     # nombres repetidos: se distinguen con una letra
     cuenta = {}
     for l in locales:
@@ -346,16 +438,11 @@ for nid, nombre, (ax, ay, bx, by) in NIVELES:
     locales.sort(key=lambda l: (l['nombre'] is None, l['nombre'] or '', l['cy'], l['cx']))
     k = 0; ids = set()
     for l in locales:
-        if not l['nombre']: k += 1; l['nombre'] = f'Espacio {k}'; l['auto'] = True
         # id estable a partir del nombre, para que las muestras guardadas sigan valiendo si se regenera el plano
         base = nid+'-'+re.sub(r'[^a-z0-9]+', '-', unicodedata.normalize('NFD', l['nombre'].lower()).encode('ascii', 'ignore').decode()).strip('-')
         i2 = base; n2 = 2
         while i2 in ids: i2 = f'{base}-{n2}'; n2 += 1
         ids.add(i2); l['id'] = i2
-    # líneas larguísimas en la capa de muros son retiros/ejes, no paredes
-    largo = lambda s: math.hypot(s[2]-s[0], s[3]-s[1])
-    S['d'] += [s for s in S['m'] if largo(s) > 45]
-    S['m'] = [s for s in S['m'] if largo(s) <= 45]
     data = {
         'id': nid, 'nombre': nombre, 'ancho': cm(W), 'alto': cm(H),
         'muros': pack(S['m']), 'aberturas': pack(S['a']), 'barreras': pack(barreras), 'detalle': pack(S['d'], 0.12),

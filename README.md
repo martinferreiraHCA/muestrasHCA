@@ -61,20 +61,29 @@ También funciona tal cual en GitHub Pages.
 cd tools
 npm install @mlightcad/libredwg-web
 node --max-old-space-size=6000 extraer_dwg.mjs PLANO.dwg ents.ndjson blocks.json meta.json
-pip install opencv-python-headless numpy
+pip install opencv-python-headless numpy scipy scikit-image
 python3 convertir_plano.py ents.ndjson blocks.json ../data
 ```
 
 `convertir_plano.py` tiene al principio los recortes de cada nivel dentro de la lámina y los
 nombres de las capas de muros y aberturas; si cambia el plano hay que ajustarlos ahí.
 
-## Cómo se detectan los salones
+## Cómo se definen los espacios
 
-`convertir_plano.py` arma una imagen de barreras (muros, ventanas y cierre de puertas) y, por
-cada etiqueta de local del plano («AULA 24», «LABORATORIO 16»…), busca los cuatro muros que
-la rodean mirando el ancho completo del local, así una puerta abierta no lo deja escapar.
-Los locales sin etiqueta se completan con las zonas encerradas restantes. Lo que no salga
-bien se corrige en la app con «Dibujar espacio», que se pega a las esquinas de los muros.
+`convertir_plano.py` parte cada planta completa en ambientes:
+
+1. Arma una imagen de barreras con los muros, las ventanas y frentes vidriados, y el cierre
+   de las puertas (se detectan por el arco de la hoja).
+2. Segmenta el espacio libre por transformada de distancia (watershed, con scikit-image):
+   cada ambiente es una cuenca y los pasos angostos son las divisorias. Así salen también los
+   halls, antesalas y pasillos que no tienen puerta.
+3. Nombra cada ambiente con el rótulo del plano que cae adentro; los que no tienen rótulo se
+   llaman Hall, Pasillo o Ambiente según su forma.
+4. Aplica un curado hecho a mano revisando el resultado contra el plano (diccionario `CURADO`
+   al principio del script): nombres de halls y pasillos, patios y exteriores trazados,
+   vacíos de doble altura descartados.
+
+Lo que quede mal se corrige en la app con «Editar forma», o agregando una línea a `CURADO`.
 
 ## Cómo funciona la simulación
 

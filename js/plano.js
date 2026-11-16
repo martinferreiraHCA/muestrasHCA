@@ -163,6 +163,8 @@ function dibujar() {
       ctx.font = `${sel ? 700 : 500} ${tam}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillStyle = sel ? ACENTO : '#8a94a3';
       const hayItems = sel && itemsNivel().length;
+      const xs = e.poly.map(q => q[0]), cabe = sel || ctx.measureText(e.nombre).width <= (Math.max(...xs) - Math.min(...xs)) * 1.05;      // sin lugar no se rotula
+      if (!cabe) continue;
       if (!hayItems) ctx.fillText(e.nombre, e.cx, e.cy);
       else { const y = Math.min(...e.poly.map(q => q[1])); ctx.textBaseline = 'bottom'; ctx.fillText(e.nombre, e.cx, y - 3 * px); }
     }
