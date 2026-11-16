@@ -4,6 +4,7 @@ import { espaciosDe, puntoEnPoly, esquinas, aLocal, esRedondo, areaTrabajo, ajus
 
 export const ui = {
   herramienta: 'mover', seleccion: new Set(), iman: true, detalle: true,
+  activo: null,                        // id del espacio cuya forma se está editando
   capa: null, ocultar: null,           // extras que dibuja la simulación de circulación
   nivel: null, alSeleccionar: () => {}, pedirNombre: async () => null, pista: () => {},
 };
@@ -57,11 +58,14 @@ export function pedir() { if (!pendiente) { pendiente = true; requestAnimationFr
 export function fijarNivel(n) { ui.nivel = n; ui.seleccion.clear(); trazo = []; medida = []; encuadrar(); }
 export function fijarHerramienta(h) {
   ui.herramienta = h; trazo = []; medida = []; hover = null;
+  if (h !== 'forma') ui.activo = null;
   canvas.style.cursor = h === 'mover' ? 'default' : 'crosshair';
   ui.pista({
     mover: '', espacios: 'Tocá un salón para elegirlo o quitarlo.',
     dibujar: 'Tocá para marcar cada esquina (se pega a las esquinas de los muros). Doble clic o Enter para cerrar el espacio. Esc cancela.',
     medir: 'Tocá dos puntos para medir la distancia.',
+    rect: 'Arrastrá de una esquina a la opuesta para dibujar un espacio rectangular.',
+    forma: 'Tocá un espacio para editarlo: arrastrá sus esquinas, los puntos chicos agregan una esquina, doble clic la quita, Supr borra el espacio.',
   }[h]);
   pedir();
 }
@@ -76,6 +80,12 @@ export function encuadrar() {
   vista.x = a.x0 - (r.width / vista.k - w) / 2;
   vista.y = a.y0 - (r.height / vista.k - h) / 2 - 15 / vista.k;
   pedir();
+}
+export function centrarEn(poly) {
+  const r = canvas.getBoundingClientRect(); if (!r.width) return;
+  const xs = poly.map(q => q[0]), ys = poly.map(q => q[1]), x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+  vista.k = Math.max(1, Math.min((r.width - 160) / (x1 - x0), (r.height - 200) / (y1 - y0), 160));
+  vista.x = (x0 + x1) / 2 - r.width / 2 / vista.k; vista.y = (y0 + y1) / 2 - r.height / 2 / vista.k; pedir();
 }
 export const centroVista = () => { const r = canvas.getBoundingClientRect(); return aMundo(r.width / 2, r.height / 2); };
 
@@ -138,11 +148,12 @@ function dibujar() {
 
   for (const e of espacios) {
     const sel = elegidos.has(e.id);
-    if (sel || e.propio || ui.herramienta === 'espacios') {
+    const verEsp = ui.herramienta === 'espacios' || ui.herramienta === 'forma';
+    if (sel || e.propio || verEsp) {
       trazar(e); ctx.lineWidth = (sel ? 2.5 : 1) * px; ctx.strokeStyle = sel ? ACENTO : 'rgba(31,78,156,.35)';
       if (!sel) ctx.setLineDash([5 * px, 4 * px]); ctx.stroke(); ctx.setLineDash([]);
     }
-    if ((sel || ui.herramienta === 'espacios' || k > 9) && !(e.auto && !sel && ui.herramienta !== 'espacios')) {
+    if ((sel || verEsp || k > 9) && !(e.auto && !sel && !verEsp)) {
       const tam = Math.max(11 * px, Math.min(0.45, 14 * px));
       ctx.font = `${sel ? 700 : 500} ${tam}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillStyle = sel ? ACENTO : '#8a94a3';
@@ -152,6 +163,22 @@ function dibujar() {
     }
   }
 
+  // espacio en edición: esquinas y puntos medios
+  const act = espacioActivo();
+  if (act) {
+    trazar(act); ctx.fillStyle = 'rgba(217,72,15,.10)'; ctx.fill(); ctx.strokeStyle = '#d9480f'; ctx.lineWidth = 2 * px; ctx.stroke();
+    act.poly.forEach((q, i) => {
+      const s = act.poly[(i + 1) % act.poly.length];
+      ctx.beginPath(); ctx.arc((q[0] + s[0]) / 2, (q[1] + s[1]) / 2, 3.5 * px, 0, 7); ctx.fillStyle = '#fff'; ctx.fill(); ctx.lineWidth = px; ctx.stroke();
+      cota(q, s, '#d9480f');
+    });
+    act.poly.forEach(q => { ctx.beginPath(); ctx.rect(q[0] - 5 * px, q[1] - 5 * px, 10 * px, 10 * px); ctx.fillStyle = '#fff'; ctx.fill(); ctx.lineWidth = 2 * px; ctx.strokeStyle = '#d9480f'; ctx.stroke(); });
+  }
+  if (accion?.tipo === 'rect' && accion.movido) {
+    const { a, b } = accion; ctx.fillStyle = 'rgba(31,78,156,.12)'; ctx.strokeStyle = ACENTO; ctx.lineWidth = 2 * px;
+    ctx.fillRect(a[0], a[1], b[0] - a[0], b[1] - a[1]); ctx.strokeRect(a[0], a[1], b[0] - a[0], b[1] - a[1]);
+    cota(a, [b[0], a[1]]); cota([b[0], a[1]], b);
+  }
   const its = itemsNivel();
   for (const it of its) if (!ui.ocultar?.(it)) dibujarItem(ctx, it, k, ui.seleccion.has(it.id));
   ui.capa?.(ctx, k);
@@ -227,6 +254,14 @@ function espacioEn(x, y) {
   const c = espaciosDe(ui.nivel, proyecto()).filter(e => puntoEnPoly(x, y, e.poly));
   return c.sort((a, b) => a.area - b.area)[0] || null;
 }
+const espacioActivo = () => ui.activo && ui.nivel ? espaciosDe(ui.nivel, proyecto()).find(e => e.id === ui.activo) || null : null;
+/** Contorno modificable de un espacio: el propio, o una copia corregida si viene del plano. */
+function polyEditable(id) {
+  const p = proyecto(), pr = p.propios.find(e => e.id === id);
+  if (pr) return pr.poly;
+  p.formas ||= {};
+  return p.formas[id] ||= espaciosDe(ui.nivel, p).find(e => e.id === id).poly.map(q => [...q]);
+}
 const pos = e => { const r = canvas.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
 
 function alBajar(e) {
@@ -257,6 +292,19 @@ function alBajar(e) {
     }
     if (e.shiftKey) { accion = { ...base, tipo: 'marco', x0: x, y0: y, x1: x, y1: y }; return; }
   }
+  if (ui.herramienta === 'rect') { const q = imanPunto(x, y); accion = { ...base, tipo: 'rect', a: q, b: q }; return; }
+  if (ui.herramienta === 'forma') {
+    const act = espacioActivo(), tol = 9 / vista.k;
+    if (act) {
+      const vi = act.poly.findIndex(q => Math.hypot(q[0] - x, q[1] - y) < tol);
+      if (vi >= 0) { accion = { ...base, tipo: 'vert', id: act.id, vi }; return; }
+      for (let i = 0; i < act.poly.length; i++) {
+        const q = act.poly[i], s = act.poly[(i + 1) % act.poly.length], m = [(q[0] + s[0]) / 2, (q[1] + s[1]) / 2];
+        if (Math.hypot(m[0] - x, m[1] - y) < tol) { accion = { ...base, tipo: 'vert', id: act.id, vi: i + 1, nuevo: m }; return; }
+      }
+      if (puntoEnPoly(x, y, act.poly)) { accion = { ...base, tipo: 'moverEsp', id: act.id, x, y }; return; }
+    }
+  }
   accion = { ...base, tipo: 'pan', vx: vista.x, vy: vista.y, clic: true, x, y };
 }
 
@@ -271,7 +319,7 @@ function alMover(e) {
     pedir(); return;
   }
   if (!accion) {
-    if (ui.herramienta === 'espacios') { const h = espacioEn(x, y); if (h?.id !== hover?.id) { hover = h; pedir(); } }
+    if (ui.herramienta === 'espacios' || ui.herramienta === 'forma') { const h = espacioEn(x, y); if (h?.id !== hover?.id) { hover = h; pedir(); } }
     if (ui.herramienta === 'dibujar' || ui.herramienta === 'medir') { cursor = imanPunto(x, y); pedir(); }
     if (ui.herramienta === 'mover') canvas.style.cursor = itemEn(x, y) ? 'move' : 'default';
     return;
@@ -290,6 +338,15 @@ function alMover(e) {
     accion.it.rot = ((Math.round(g * 10) / 10) % 360 + 360) % 360;
     ui.pista(`Giro: ${accion.it.rot}°  ·  Shift = giro libre`);
   } else if (accion.tipo === 'marco') { accion.x1 = x; accion.y1 = y; }
+  else if (accion.tipo === 'rect') accion.b = imanPunto(x, y);
+  else if (accion.tipo === 'vert') {
+    if (!accion.movido) { marcar(); accion.poly = polyEditable(accion.id); if (accion.nuevo) accion.poly.splice(accion.vi, 0, accion.nuevo); }
+    accion.poly[accion.vi] = imanPunto(x, y);
+  } else if (accion.tipo === 'moverEsp') {
+    if (!accion.movido) { marcar(); accion.poly = polyEditable(accion.id); accion.orig = accion.poly.map(q => [...q]); }
+    const dx = iman(x - accion.x), dy = iman(y - accion.y);
+    accion.orig.forEach((q, i) => { accion.poly[i] = [q[0] + dx, q[1] + dy]; });
+  }
   accion.movido = true; pedir();
 }
 
@@ -298,6 +355,12 @@ function alSoltar(e) {
   const a = accion; accion = null;
   if (!a || a.tipo === 'pellizco') return;
   if (a.tipo === 'arrastrar' || a.tipo === 'girar') { if (a.movido) { avisar('items'); if (a.tipo === 'girar') ui.pista(''); } return; }
+  if (a.tipo === 'vert' || a.tipo === 'moverEsp') { if (a.movido) avisar('espacios'); return; }
+  if (a.tipo === 'rect') {
+    const [x0, y0] = a.a, [x1, y1] = a.b; pedir();
+    if (a.movido && Math.abs(x1 - x0) > 0.3 && Math.abs(y1 - y0) > 0.3) crearEspacio([[x0, y0], [x1, y0], [x1, y1], [x0, y1]]);
+    return;
+  }
   if (a.tipo === 'marco') {
     const x0 = Math.min(a.x0, a.x1), x1 = Math.max(a.x0, a.x1), y0 = Math.min(a.y0, a.y1), y1 = Math.max(a.y0, a.y1);
     itemsNivel().forEach(i => { if (i.x >= x0 && i.x <= x1 && i.y >= y0 && i.y <= y1) ui.seleccion.add(i.id); });
@@ -310,7 +373,8 @@ function alSoltar(e) {
   else if (h === 'espacios') {
     const esp = espacioEn(a.x, a.y);
     if (esp) { marcar(); const p = proyecto(); p.espacios = p.espacios.includes(esp.id) ? p.espacios.filter(i => i !== esp.id) : [...p.espacios, esp.id]; avisar('espacios'); }
-  } else if (h === 'dibujar') {
+  } else if (h === 'forma') { ui.activo = espacioEn(a.x, a.y)?.id || null; pedir(); }
+  else if (h === 'dibujar') {
     const q = imanPunto(a.x, a.y);
     if (trazo.length >= 3 && Math.hypot(q[0] - trazo[0][0], q[1] - trazo[0][1]) < 10 / vista.k) cerrarTrazo();
     else { trazo.push(q); pedir(); }
@@ -321,19 +385,44 @@ function alSoltar(e) {
     pedir();
   }
 }
-function alDoble() { if (ui.herramienta === 'dibujar' && trazo.length >= 3) { trazo.pop(); cerrarTrazo(); } }
+function alDoble(e) {
+  if (ui.herramienta === 'dibujar' && trazo.length >= 3) { trazo.pop(); cerrarTrazo(); return; }
+  const act = espacioActivo();
+  if (ui.herramienta === 'forma' && act && act.poly.length > 3) {      // quitar una esquina
+    const [x, y] = aMundo(...pos(e)), vi = act.poly.findIndex(q => Math.hypot(q[0] - x, q[1] - y) < 9 / vista.k);
+    if (vi >= 0) { marcar(); polyEditable(act.id).splice(vi, 1); avisar('espacios'); }
+  }
+}
 
-export async function cerrarTrazo() {
+export function cerrarTrazo() {
   if (trazo.length < 3) return;
   const poly = trazo; trazo = []; pedir();
+  return crearEspacio(poly);
+}
+async function crearEspacio(poly) {
   const nombre = await ui.pedirNombre('Nombre del espacio', 'Espacio propio');
   if (!nombre) return;
   marcar();
   const p = proyecto(), id = 'x-' + uid();
   p.propios.push({ id, nivel: ui.nivel.id, nombre, poly }); p.espacios.push(id);
+  ui.alHerramienta?.('forma'); ui.activo = id;        // queda listo para ajustar las esquinas
+  avisar('espacios');
+}
+/** Quita el espacio en edición: los propios se borran, los del plano se ocultan. */
+export function borrarActivo() {
+  const id = ui.activo; if (!id) return false;
+  quitarEspacio(id); return true;
+}
+export function quitarEspacio(id) {
+  marcar(); const p = proyecto();
+  if (p.propios.some(e => e.id === id)) p.propios = p.propios.filter(e => e.id !== id);
+  else { p.ocultos = [...(p.ocultos || []), id]; if (p.formas) delete p.formas[id]; }
+  p.espacios = p.espacios.filter(x => x !== id);
+  if (ui.activo === id) ui.activo = null;
   avisar('espacios');
 }
 export function cancelar() {
+  if (ui.activo) { ui.activo = null; pedir(); return true; }
   if (trazo.length || medida.length) { trazo = []; medida = []; pedir(); return true; }
   return false;
 }

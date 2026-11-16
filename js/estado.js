@@ -34,6 +34,8 @@ function proyectoNuevo(nombre = 'Muestra sin nombre') {
     id: uid(), nombre, fecha: new Date().toISOString().slice(0, 10), nivel: 'pb', altura: 3,
     espacios: [],          // ids de espacios elegidos (de cualquier nivel)
     propios: [],           // espacios dibujados: {id, nivel, nombre, poly:[[x,y]…] en metros}
+    formas: {},            // id de espacio del plano -> contorno corregido por el usuario
+    ocultos: [],           // ids de espacios del plano que el usuario quitó
     renombres: {},         // id de espacio -> nombre puesto por el usuario
     sim: {},               // parámetros de la simulación de circulación
     items: [],             // {id, nivel, tipo, nombre, modelo, x, y, rot, w, d, h, color, etiqueta}

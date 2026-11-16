@@ -7,7 +7,7 @@ Por cada nivel genera muros, aberturas y detalle como segmentos en centímetros
 (origen arriba-izquierda, eje Y hacia abajo), las etiquetas de los locales y los
 polígonos de los salones detectados automáticamente.
 """
-import json, math, re, sys, os
+import json, math, re, sys, os, unicodedata
 import numpy as np, cv2
 
 SRC, BLK, OUT = sys.argv[1:4]
@@ -135,6 +135,18 @@ for line in open(SRC):
     if not p or not (X0 < p['x'] < X1 and Y0 < p['y'] < Y1): continue
     emit(e, I, None)
 print({k: len(v) for k, v in segs.items()}, 'puertas', len(puertas), 'textos', len(textos))
+
+# Espacios exteriores trazados a mano sobre el plano (metros, mismo origen que el JSON del nivel).
+# No tienen muros que los encierren, así que no se pueden detectar; en la app se pueden corregir.
+EXTERIORES = {
+    'pb': [
+        ('Patio central', [(41, 23), (69.5, 23), (69.5, 30), (49, 30), (49, 45.2), (41, 45.2)]),
+        ('Patio este', [(77.6, 23.2), (102, 23.2), (103, 28), (100, 33), (96, 41.5), (82, 41.5), (79.5, 33), (77.6, 30)]),
+        ('Cancha de fútbol', [(16.2, 31.1), (35.9, 31.1), (35.9, 41.8), (16.2, 41.8)]),
+        ('Explanada de hormigón', [(7, 4), (19.6, 4), (19.6, 29.3), (7, 29.3)]),
+        ('Acceso techado (auditorio y comedor)', [(24.7, 45.8), (39.1, 45.8), (39.1, 51.6), (24.7, 51.6)]),
+    ],
+}
 
 LOCAL = re.compile(r'^(AULA|SS\.?HH|OFICINA|HALL|LABORATORIO|ADMINISTRACI|COCINA|COMEDOR|SAL[OÓ]N|SALA|AUDITORIO|DEP[OÓ]SITO|RECEPCI|DIRECCI|VESTUARIO|PORTER|BIBLIOTECA|GALER|PATIO|AREA DEPORTIVA|CANCHA|AZOTEA|EXPLANADA|GIMNASIO|ENFERMER|SECRETAR|TALLER|CANTINA|CAPILLA|SUM\b)', re.I)
 CONT = re.compile(r'^(DE USOS|M[UÚ]LTIPLES|MULTIUSO|BIBLIOTECA|DORMIR|TRANSITABLE|TECHADA|AUXILIAR|EXTERIOR EXISTENTE|DE F[UÚ]TBOL|DE PROFESORES|DE ARTE|DE M[UÚ]SICA|INFORM[AÁ]TICA)', re.I)
@@ -316,6 +328,11 @@ for nid, nombre, (ax, ay, bx, by) in NIVELES:
         poly = contorno(x, y, reg)
         if poly: locales.append({'nombre': None, 'area': round(float(area), 1), 'poly': poly, 'cx': cm(cent[i][0]*RES), 'cy': cm(cent[i][1]*RES)})
 
+    for nom, pts in EXTERIORES.get(nid, []):
+        pg = np.array(pts, float); xs, ys = pg[:, 0], pg[:, 1]
+        ar = abs(float(np.dot(xs, np.roll(ys, -1))-np.dot(ys, np.roll(xs, -1))))/2
+        locales.append({'nombre': nom, 'area': round(ar, 1), 'poly': [[cm(x), cm(y)] for x, y in pts],
+                        'cx': cm(xs.mean()), 'cy': cm(ys.mean()), 'exterior': True})
     # nombres repetidos: se distinguen con una letra
     cuenta = {}
     for l in locales:
@@ -326,10 +343,14 @@ for nid, nombre, (ax, ay, bx, by) in NIVELES:
         if n and cuenta[n] > 1:
             visto[n] = visto.get(n, 0)+1; l['nombre'] = f"{n} ({'abcdefghijklmnop'[visto[n]-1]})"
     locales.sort(key=lambda l: (l['nombre'] is None, l['nombre'] or '', l['cy'], l['cx']))
-    k = 0
-    for j, l in enumerate(locales):
-        l['id'] = f'{nid}-{j+1}'
+    k = 0; ids = set()
+    for l in locales:
         if not l['nombre']: k += 1; l['nombre'] = f'Espacio {k}'; l['auto'] = True
+        # id estable a partir del nombre, para que las muestras guardadas sigan valiendo si se regenera el plano
+        base = nid+'-'+re.sub(r'[^a-z0-9]+', '-', unicodedata.normalize('NFD', l['nombre'].lower()).encode('ascii', 'ignore').decode()).strip('-')
+        i2 = base; n2 = 2
+        while i2 in ids: i2 = f'{base}-{n2}'; n2 += 1
+        ids.add(i2); l['id'] = i2
     # líneas larguísimas en la capa de muros son retiros/ejes, no paredes
     largo = lambda s: math.hypot(s[2]-s[0], s[3]-s[1])
     S['d'] += [s for s in S['m'] if largo(s) > 45]

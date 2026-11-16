@@ -28,7 +28,7 @@ export async function cargarNivel(info) {
     id: d.id, nombre: d.nombre, ancho: d.ancho / 100, alto: d.alto / 100,
     muros: aMetros(d.muros), aberturas: aMetros(d.aberturas), barreras: aMetros(d.barreras || []), detalle: aMetros(d.detalle),
     locales: d.locales.map(l => ({
-      id: l.id, nombre: l.nombre, auto: !!l.auto, area: l.area,
+      id: l.id, nombre: l.nombre, auto: !!l.auto, exterior: !!l.exterior, area: l.area,
       poly: l.poly.map(p => [p[0] / 100, p[1] / 100]),
     })),
   };
@@ -44,7 +44,12 @@ export function espaciosDe(nivel, proy) {
     const [cx, cy] = centroide(e.poly);
     return { id: e.id, nombre: e.nombre, poly: e.poly, area: Math.round(areaPoly(e.poly) * 10) / 10, cx, cy, propio: true };
   });
-  const delPlano = nivel.locales.map(l => ({ ...l, nombre: proy.renombres[l.id] || l.nombre }));
+  const formas = proy.formas || {}, ocultos = proy.ocultos || [];
+  const delPlano = nivel.locales.filter(l => !ocultos.includes(l.id)).map(l => {
+    const e = { ...l, nombre: proy.renombres[l.id] || l.nombre }, poly = formas[l.id];
+    if (poly) { [e.cx, e.cy] = centroide(poly); e.poly = poly; e.area = Math.round(areaPoly(poly) * 10) / 10; e.editado = true; }
+    return e;
+  });
   return [...propios, ...delPlano];
 }
 export const espaciosElegidos = (nivel, proy) => espaciosDe(nivel, proy).filter(e => proy.espacios.includes(e.id));

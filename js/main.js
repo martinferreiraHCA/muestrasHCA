@@ -207,8 +207,10 @@ function pintarEspacios() {
     <div class="esp ${p.espacios.includes(e.id) ? 'sel' : ''}" data-id="${e.id}">
       <input type="checkbox" ${p.espacios.includes(e.id) ? 'checked' : ''} aria-label="Elegir ${esc(e.nombre)}">
       <span class="n" title="${esc(e.nombre)}">${esc(e.nombre)}</span><span class="a">${Math.round(e.area)} m²</span>
-      <button data-a="renombrar" title="Cambiar nombre">✎</button>${e.propio ? '<button data-a="borrar" title="Eliminar espacio">✕</button>' : ''}
-    </div>`).join('') || '<div class="vacio">No hay espacios con ese nombre. Podés dibujar uno con «Dibujar espacio».</div>';
+      <button data-a="forma" title="Editar la forma">◇</button><button data-a="renombrar" title="Cambiar nombre">✎</button><button data-a="borrar" title="Quitar espacio">✕</button>
+    </div>`).join('') || '<div class="vacio">No hay espacios con ese nombre. Podés dibujar uno con «Rectángulo» o «Polígono».</div>';
+  const tocados = (p.ocultos || []).some(id => id.startsWith(nivel.id + '-')) || Object.keys(p.formas || {}).some(id => id.startsWith(nivel.id + '-'));
+  $('btnRestaurarEsp').classList.toggle('oculto', !tocados);
 }
 
 function pintarCatalogo() {
@@ -445,6 +447,12 @@ function conectar() {
   $('inFecha').onchange = e => { proyecto().fecha = e.target.value; avisar('nombre'); };
   $('inAltura').onchange = e => { marcar(); proyecto().altura = num(e.target.value, 1, 8, 3); avisar('altura'); };
   $('inBuscarEsp').oninput = pintarEspacios;
+  $('btnRestaurarEsp').onclick = async () => {
+    if (!await confirmar(`¿Volver a los espacios originales del plano en ${nivel.nombre}? Se pierden las formas corregidas y vuelven los que quitaste.`, 'Restaurar')) return;
+    marcar(); const p = proyecto(), de = id => id.startsWith(nivel.id + '-');
+    p.ocultos = (p.ocultos || []).filter(id => !de(id)); p.formas = Object.fromEntries(Object.entries(p.formas || {}).filter(([id]) => !de(id)));
+    avisar('espacios');
+  };
 
   $('listaEspacios').onclick = async e => {
     const fila = e.target.closest('.esp'); if (!fila) return;
@@ -454,8 +462,11 @@ function conectar() {
       const n = await pedirNombre('Nombre del espacio', actual.nombre); if (!n) return;
       marcar(); const propio = p.propios.find(x => x.id === id);
       if (propio) propio.nombre = n; else p.renombres[id] = n;
-    } else if (a === 'borrar') {
-      marcar(); p.propios = p.propios.filter(x => x.id !== id); p.espacios = p.espacios.filter(x => x !== id);
+    } else if (a === 'borrar') { P.quitarEspacio(id); return; }
+    else if (a === 'forma') {
+      if (vistaIso || vistaSim) await ver('plano');
+      ui.alHerramienta('forma'); ui.activo = id;
+      const e = espaciosDe(nivel, p).find(x => x.id === id); P.centrarEn(e.poly); return;
     } else {
       marcar(); p.espacios = p.espacios.includes(id) ? p.espacios.filter(x => x !== id) : [...p.espacios, id];
       avisar('espacios'); P.encuadrar(); return;
@@ -479,9 +490,9 @@ function conectar() {
   $('chkIman').onchange = e => { ui.iman = e.target.checked; };
   $('chkDetalle').onchange = e => { ui.detalle = e.target.checked; P.pedir(); };
   $('btnEncuadrar').onclick = P.encuadrar;
-  $('btnGiroIzq').onclick = () => iso.girar(-1); $('btnGiroDer').onclick = () => iso.girar(1);
-  $('selMuros').onchange = $('chkEtiquetas3d').onchange = () => iso.actualizarIso(nivel, proyecto(), opIso());
-  $('btnPNG').onclick = () => descargar(archivo(proyecto().nombre) + '-isometrica.png', iso.capturarVista());
+  $('btnGiroIzq').onclick = () => iso?.girar(-1); $('btnGiroDer').onclick = () => iso?.girar(1);
+  $('selMuros').onchange = $('chkEtiquetas3d').onchange = () => iso?.actualizarIso(nivel, proyecto(), opIso());
+  $('btnPNG').onclick = () => iso && descargar(archivo(proyecto().nombre) + '-isometrica.png', iso.capturarVista());
 
   window.addEventListener('keydown', e => {
     if ($('dlg').open || e.target.matches('input, select, textarea')) return;
@@ -499,7 +510,7 @@ function conectar() {
       const n = clonar(portapapeles, 0, 0); ui.seleccion.clear(); n.forEach(i => ui.seleccion.add(i.id)); avisar('items');
     }
     else if (ctrl) return;
-    else if (k === 'delete' || k === 'backspace') { e.preventDefault(); borrar(); }
+    else if (k === 'delete' || k === 'backspace') { e.preventDefault(); if (!(ui.herramienta === 'forma' && P.borrarActivo())) borrar(); }
     else if (k === 'r') girarSel(e.shiftKey ? 15 : 90);
     else if (k.startsWith('arrow') && sel.length) {
       e.preventDefault(); const d = e.shiftKey ? 0.5 : 0.05; marcar();
@@ -509,6 +520,7 @@ function conectar() {
     else if (k === 'escape') { if (!P.cancelar()) { if (ui.herramienta !== 'mover') herr('mover'); else { ui.seleccion.clear(); pintarPanel(); P.pedir(); } } }
     else if (k === 'enter') P.cerrarTrazo();
     else if (k === 'v') herr('mover'); else if (k === 'e') herr('espacios'); else if (k === 'd') herr('dibujar');
+    else if (k === 't') herr('rect'); else if (k === 'g') herr('forma');
     else if (k === 'm') herr('medir'); else if (k === 'f') P.encuadrar();
   });
 }

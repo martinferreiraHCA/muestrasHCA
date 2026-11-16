@@ -7,8 +7,12 @@ las ubicaciones.
 ## Qué hace
 
 - **Niveles y espacios**: subsuelo, planta baja, primer y segundo piso, tomados del plano
-  `PLANO_MDCI.dwg`. Los salones se detectan del plano; también se puede dibujar un espacio
-  propio punto a punto y cambiarle el nombre a cualquiera.
+  `PLANO_MDCI.dwg`. Los salones se detectan del plano y los exteriores de planta baja (patio
+  central, patio este, cancha, explanada) vienen trazados.
+- **Dibujo de espacios**: se dibujan espacios propios con Rectángulo o Polígono (se pegan a
+  las esquinas de los muros) y con Editar forma se corrige cualquiera, incluso los del plano:
+  mover esquinas, agregar o quitar, desplazarlo entero, renombrarlo o quitarlo. Siempre se
+  puede volver a los espacios originales.
 - **Planta**: agregar elementos, moverlos, girarlos, duplicarlos, repetirlos en grilla
   (filas de sillas o stands), numerarlos y escribirles un nombre. Herramienta para medir.
 - **Elementos propios**: cada usuario puede crear sus mesas, bancos y demás con sus medidas,
