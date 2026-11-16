@@ -118,3 +118,14 @@ dialog .menu button { text-align: left; padding: 8px 10px; }
 
 .botones .chip:empty { display: none; }
 .panel input:disabled { background: #f3f4f6; color: var(--suave); }
+
+.catalogo h3 { grid-column: 1 / -1; font-size: 11px; font-weight: 600; color: var(--suave); margin: 8px 0 0; }
+.catalogo h3:first-child { margin-top: 0; }
+.herramientas input[type=date] { width: auto; }
+.herramientas input[type=range] { width: 150px; }
+.tablasol { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+.tablasol td, .tablasol th { padding: 3px 4px; text-align: right; border-bottom: 1px solid #eef0f3; font-weight: 400; }
+.tablasol th { color: var(--suave); } .tablasol td:first-child, .tablasol th:first-child { text-align: left; }
+.tablasol tr.muestra td { background: #fff8e1; font-weight: 600; }
+.barrita { display: inline-block; width: 34px; height: 7px; background: #dfe3ea; border-radius: 4px; overflow: hidden; vertical-align: middle; margin-right: 4px; }
+.barrita i { display: block; height: 100%; background: #f59f00; }

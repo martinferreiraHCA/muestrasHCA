@@ -27,8 +27,12 @@ las ubicaciones.
   la entrada y la salida con un clic en el plano. La simulación reparte la llegada de los
   visitantes en ese horario, admite un tope de tiempo de visita por persona, e informa el
   tiempo de recorrido, el máximo de personas a la vez y si el horario alcanza.
-- **PDF**: una página por nivel con la planta a escala, la vista isométrica, el mapa de
-  circulación simulado y el listado de elementos y nombres.
+- **Sol y sombras**: para una fecha y una hora muestra en la planta las sombras de los
+  edificios (según la cantidad de pisos) y de los elementos altos, cuánto sol recibe cada
+  espacio al aire libre hora por hora, y lo mismo en la vista isométrica. Usa la ubicación de
+  Montevideo y el norte del plano (se puede corregir). No considera árboles ni vecinos.
+- **PDF**: una página por nivel con la planta a escala, la vista isométrica, los mapas de
+  circulación y de sol y sombras, y el listado de elementos y nombres.
 - Las muestras se guardan solas en el navegador y se pueden exportar/importar como archivo.
 
 ## Cómo usarla

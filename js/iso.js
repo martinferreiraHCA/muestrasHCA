@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { OrbitControls } from '../vendor/OrbitControls.js';
 import { espaciosElegidos, areaTrabajo, esRedondo } from './niveles.js';
 
-let cont, renderer, escena, camara, controles, grupo;
+let cont, renderer, escena, camara, controles, grupo, sol, cielo;
 let giro = 0, area = null, altura = 3, visible = false;
 const ELEV = Math.atan(1 / Math.SQRT2);       // 35,26°: isométrica verdadera
 
@@ -13,8 +13,10 @@ export function iniciarIso(contenedor) {
   renderer.setClearColor(0xfbfbfc);
   cont.appendChild(renderer.domElement);
   escena = new THREE.Scene();
-  escena.add(new THREE.HemisphereLight(0xffffff, 0xb9b4aa, 2.1));
-  const sol = new THREE.DirectionalLight(0xffffff, 1.6); sol.position.set(-3, 8, 5); escena.add(sol);
+  cielo = new THREE.HemisphereLight(0xffffff, 0xb9b4aa, 2.1); escena.add(cielo);
+  sol = new THREE.DirectionalLight(0xffffff, 1.6); sol.position.set(-3, 8, 5); escena.add(sol); escena.add(sol.target);
+  sol.shadow.mapSize.set(4096, 4096); sol.shadow.bias = -0.0008; sol.shadow.normalBias = 0.03;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   camara = new THREE.OrthographicCamera(-10, 10, 10, -10, -2000, 4000);
   controles = new OrbitControls(camara, renderer.domElement);
   controles.maxPolarAngle = Math.PI / 2 - 0.05; controles.zoomToCursor = true;
@@ -68,6 +70,11 @@ function mallaItem(it) {
       const c = new THREE.Mesh(new THREE.CylinderGeometry(w * 0.32, w * 0.4, h * 0.82, 16), m); c.position.y = h * 0.41; g.add(c);
       const k = new THREE.Mesh(new THREE.SphereGeometry(w * 0.26, 16, 12), mat(0xf1c9a5)); k.position.y = h * 0.92; g.add(k); break;
     }
+    case 'techo': {
+      g.add(caja(w + 0.2, 0.08, d + 0.2, 0, h, 0, m));
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) g.add(caja(0.06, h, 0.06, sx * (w / 2 - 0.05), h / 2, sz * (d / 2 - 0.05), pata));
+      break;
+    }
     case 'zona': g.add(caja(w, 0.02, d, 0, 0.012, 0, mat(it.color, { transparent: true, opacity: 0.35 }))); break;
     case 'texto': break;
     default: g.add(caja(w, h, d, 0, h / 2, 0, m));
@@ -97,6 +104,16 @@ export function actualizarIso(nivel, proy, op = {}) {
   const { x0, y0, x1, y1 } = area, aw = x1 - x0, ah = y1 - y0;
   const dentro = (x, y) => x >= x0 && x <= x1 && y >= y0 && y <= y1;
 
+  // sol: op.sol = { hacia: [x, y] en el plano, el: altura en grados } o null
+  const conSol = !!(op.sol && op.sol.el > 0.5);
+  renderer.shadowMap.enabled = conSol; sol.castShadow = conSol;
+  if (conSol) {
+    const e = op.sol.el * Math.PI / 180, D = 300, cx = (x0 + x1) / 2, cz = (y0 + y1) / 2, rad = Math.hypot(aw, ah) / 2 + 34;
+    sol.target.position.set(cx, 0, cz);
+    sol.position.set(cx + op.sol.hacia[0] * Math.cos(e) * D, Math.sin(e) * D, cz + op.sol.hacia[1] * Math.cos(e) * D);
+    Object.assign(sol.shadow.camera, { left: -rad, right: rad, top: rad, bottom: -rad, near: 1, far: 2 * D }); sol.shadow.camera.updateProjectionMatrix();
+    sol.intensity = 2.0; cielo.intensity = 1.15;      // menos luz ambiente para que la sombra se note
+  } else { cielo.intensity = 2.1; sol.position.set((x0 + x1) / 2 - 30, 80, (y0 + y1) / 2 + 50); sol.target.position.set((x0 + x1) / 2, 0, (y0 + y1) / 2); sol.intensity = 1.6; }
   const piso = new THREE.Mesh(new THREE.PlaneGeometry(aw, ah), mat(0xf1efe9));
   piso.rotation.x = -Math.PI / 2; piso.position.set(x0 + aw / 2, -0.01, y0 + ah / 2); grupo.add(piso);
 
@@ -121,10 +138,27 @@ export function actualizarIso(nivel, proy, op = {}) {
     const o = new THREE.Object3D();
     tramos.forEach((i, n) => {
       const dx = S[i + 2] - S[i], dz = S[i + 3] - S[i + 1], l = Math.hypot(dx, dz);
-      o.position.set((S[i] + S[i + 2]) / 2, hm / 2, (S[i + 1] + S[i + 3]) / 2);
-      o.rotation.set(0, -Math.atan2(dz, dx), 0); o.scale.set(l + 0.06, hm, 0.07); o.updateMatrix(); inst.setMatrixAt(n, o.matrix);
+      const hh = conSol && op.muros !== 'bajos' ? hm * (nivel.pisos?.[i / 4] || 1) : hm;       // con sol, la altura real del edificio
+      o.position.set((S[i] + S[i + 2]) / 2, hh / 2, (S[i + 1] + S[i + 3]) / 2);
+      o.rotation.set(0, -Math.atan2(dz, dx), 0); o.scale.set(l + 0.06, hh, 0.07); o.updateMatrix(); inst.setMatrixAt(n, o.matrix);
     });
     grupo.add(inst);
+  }
+  if (conSol) {
+    // dan sombra aunque no se dibujen: los muros ocultos y los edificios de alrededor del área
+    const MG = 30, fuera = [];
+    for (let i = 0; i < S.length; i += 4) {
+      const mx = (S[i] + S[i + 2]) / 2, my = (S[i + 1] + S[i + 3]) / 2, d = dentro(mx, my);
+      if ((d && hm === 0) || (!d && mx > x0 - MG && mx < x1 + MG && my > y0 - MG && my < y1 + MG)) fuera.push(i);
+    }
+    if (fuera.length) {
+      const inv = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false }), fuera.length), o = new THREE.Object3D();
+      fuera.forEach((i, n) => {
+        const dx = S[i + 2] - S[i], dz = S[i + 3] - S[i + 1], hh = altura * (nivel.pisos?.[i / 4] || 1);
+        o.position.set((S[i] + S[i + 2]) / 2, hh / 2, (S[i + 1] + S[i + 3]) / 2); o.rotation.set(0, -Math.atan2(dz, dx), 0); o.scale.set(Math.hypot(dx, dz) + 0.06, hh, 0.07); o.updateMatrix(); inv.setMatrixAt(n, o.matrix);
+      });
+      inv.frustumCulled = false; grupo.add(inv);
+    }
   }
 
   const items = proy.items.filter(i => i.nivel === nivel.id);
@@ -137,6 +171,7 @@ export function actualizarIso(nivel, proy, op = {}) {
       s.position.set(it.x, tope + altoCartel * 0.75, it.y); grupo.add(s);
     }
   }
+  grupo.traverse(m => { if (m.isMesh && !m.isSprite) { m.castShadow = conSol && m !== piso; m.receiveShadow = conSol; } });
   if (visible) pintar();
 }
 

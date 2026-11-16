@@ -5,6 +5,7 @@ import { espaciosDe, puntoEnPoly, esquinas, aLocal, esRedondo, areaTrabajo, ajus
 export const ui = {
   herramienta: 'mover', seleccion: new Set(), iman: true, detalle: true,
   activo: null,                        // id del espacio cuya forma se está editando
+  capaPantalla: null,
   capa: null, ocultar: null,           // extras que dibuja la simulación de circulación
   nivel: null, alSeleccionar: () => {}, pedirNombre: async () => null, pista: () => {},
 };
@@ -103,6 +104,9 @@ export function dibujarItem(c, it, k, sel) {
     c.setLineDash([6 * px, 4 * px]); c.strokeStyle = sel ? ACENTO : it.color; c.lineWidth = 1.5 * px; c.stroke(); c.setLineDash([]);
   } else if (it.modelo === 'texto') {
     if (sel) { forma(); c.setLineDash([3 * px, 3 * px]); c.stroke(); c.setLineDash([]); }
+  } else if (it.modelo === 'techo') {
+    forma(); c.globalAlpha = .3; c.fill(); c.globalAlpha = 1; c.strokeStyle = sel ? ACENTO : it.color; c.lineWidth = 2 * px; c.stroke();
+    c.beginPath(); c.moveTo(-w / 2, -d / 2); c.lineTo(w / 2, d / 2); c.moveTo(w / 2, -d / 2); c.lineTo(-w / 2, d / 2); c.lineWidth = px; c.globalAlpha = .6; c.stroke(); c.globalAlpha = 1;
   } else if (it.modelo === 'stand') {
     forma(); c.globalAlpha = .18; c.fill(); c.globalAlpha = 1; c.stroke();
     c.beginPath(); c.moveTo(-w / 2, d / 2 * 0.2); c.lineTo(-w / 2, -d / 2); c.lineTo(w / 2, -d / 2); c.lineTo(w / 2, d / 2 * 0.2);
@@ -119,7 +123,7 @@ export function dibujarItem(c, it, k, sel) {
       const r = ((it.rot % 360) + 360) % 360;
       if (r > 90 && r <= 270) c.rotate(Math.PI);
       c.font = `600 ${t.tam}px system-ui, sans-serif`; c.textAlign = 'center'; c.textBaseline = 'middle';
-      c.fillStyle = (it.modelo === 'zona' || it.modelo === 'stand') ? '#1c2430' : it.modelo === 'texto' ? it.color : contraste(it.color);
+      c.fillStyle = (it.modelo === 'zona' || it.modelo === 'stand' || it.modelo === 'techo') ? '#1c2430' : it.modelo === 'texto' ? it.color : contraste(it.color);
       t.lineas.forEach((l, i) => c.fillText(l, 0, (i - (t.lineas.length - 1) / 2) * t.tam * 1.12));
     }
   }
@@ -225,6 +229,7 @@ function dibujarEscala() {
   const r = canvas.getBoundingClientRect();
   const pasos = [0.5, 1, 2, 5, 10, 20, 50]; const m = pasos.find(s => s * vista.k >= 70) || 50;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ui.capaPantalla?.(ctx, r.width, r.height);
   const x = r.width - 20 - m * vista.k, y = r.height - 18;
   ctx.strokeStyle = '#1c2430'; ctx.lineWidth = 1.5; ctx.beginPath();
   ctx.moveTo(x, y - 5); ctx.lineTo(x, y); ctx.lineTo(x + m * vista.k, y); ctx.lineTo(x + m * vista.k, y - 5); ctx.stroke();

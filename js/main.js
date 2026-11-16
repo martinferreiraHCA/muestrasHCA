@@ -1,7 +1,8 @@
 // Interfaz: une el estado, el editor 2D, la vista isométrica y la exportación.
 import * as E from './estado.js';
 import { proyecto, marcar, avisar, uid } from './estado.js';
-import { cargarIndice, cargarNivel, espaciosDe, espaciosElegidos } from './niveles.js';
+import { cargarIndice, cargarNivel, espaciosDe, espaciosElegidos, geo } from './niveles.js';
+import * as SOL from './sol.js';
 import * as P from './plano.js';
 import { ui } from './plano.js';
 import { generarPDF } from './pdf.js';
@@ -11,7 +12,7 @@ const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const num = (v, min, max, def) => { const n = parseFloat(String(v).replace(',', '.')); return isFinite(n) ? Math.max(min, Math.min(max, n)) : def; };
 
-let indice = [], nivel = null, iso = null, vistaIso = false, vistaSim = false, portapapeles = [], editandoPanel = false;
+let indice = [], nivel = null, iso = null, vistaIso = false, vistaSim = false, vistaSol = false, portapapeles = [], editandoPanel = false;
 
 // ---------- utilidades de interfaz ----------
 let tAviso;
@@ -60,19 +61,31 @@ async function fijarNivel(id, encuadrar = true) {
   pintarTodo();
 }
 
-const opIso = () => ({ muros: $('selMuros').value, etiquetas: $('chkEtiquetas3d').checked });
+const opIso = () => {
+  const q = $('chkSol3d').checked ? solAhora() : null;
+  $('solHora3d').textContent = q ? `${SOL.hhmm(solHora())}` : '';
+  return { muros: $('selMuros').value, etiquetas: $('chkEtiquetas3d').checked, sol: q && { hacia: SOL.vectores(q.sol, q.norte).hacia, el: q.sol.el } };
+};
 async function asegurarIso() {
   if (!iso) { iso = await import('./iso.js'); iso.iniciarIso($('iso')); }
   return iso;
 }
 async function ver(v) {
-  vistaIso = v === 'iso'; vistaSim = v === 'sim';
+  vistaIso = v === 'iso'; vistaSim = v === 'sim'; vistaSol = v === 'sol';
+  $('tabSol').classList.toggle('activo', vistaSol); $('herramientasSol').classList.toggle('oculto', !vistaSol);
+  if (!vistaSol) solPausar();
   $('tabPlano').classList.toggle('activo', v === 'plano'); $('tabIso').classList.toggle('activo', vistaIso); $('tabSim').classList.toggle('activo', vistaSim);
   $('plano').classList.toggle('oculto', vistaIso); $('iso').classList.toggle('oculto', !vistaIso);
   $('herramientas').classList.toggle('oculto', v !== 'plano'); $('herramientasIso').classList.toggle('oculto', !vistaIso); $('herramientasSim').classList.toggle('oculto', !vistaSim);
   if (!vistaSim) simPausar();
   ui.capa = vistaSim ? (ctx, k) => sim?.dibujar(ctx, k, $('selSimMapa').value) : null;
   ui.ocultar = vistaSim ? it => it.modelo === 'persona' && sim && sim.t > 0 : null;
+  ui.capaPantalla = null;
+  if (vistaSol) {
+    solCache = null; $('solFecha').value = solFecha(); $('solHora').value = solHora(); solTexto();
+    ui.capa = (ctx, k) => { const q = solAhora(); SOL.dibujarSol(ctx, k, nivel, proyecto(), q.sol, q.norte, q.path); };
+    ui.capaPantalla = (ctx, w, h) => { const q = solAhora(); SOL.dibujarRosa(ctx, w, h, q.sol, q.norte); };
+  }
   ui.pista('');
   if (vistaIso) {
     try { await asegurarIso(); } catch (e) { aviso('No se pudo iniciar la vista 3D en este navegador.'); return ver('plano'); }
@@ -81,10 +94,76 @@ async function ver(v) {
   } else {
     iso?.mostrarIso(false);
     if (vistaSim) { ui.alHerramienta('mover'); ui.seleccion.clear(); if (!sim) simCrear(); }
+    if (vistaSol) { ui.alHerramienta('mover'); ui.seleccion.clear(); }
     pintarPanel(); P.pedir();
   }
 }
 const verIso = si => ver(si ? 'iso' : 'plano');
+
+// ---------- sol y sombras ----------
+let solCache = null, solCorre = 0;
+const solFecha = () => proyecto().sol?.fecha || proyecto().fecha || new Date().toISOString().slice(0, 10);
+const solHora = () => proyecto().sol?.hora ?? horaDec(proyecto().horaInicio) ?? 12;
+const solNorte = () => proyecto().norte ?? geo.norte ?? 0;
+function horaDec(h) { const [a, b] = (h || '').split(':').map(Number); return isFinite(a) && isFinite(b) ? a + b / 60 : null; }
+/** Sol y sombras del momento elegido (se recalcula solo si cambió algo). */
+function solAhora() {
+  const clave = [nivel.id, solFecha(), solHora(), solNorte()].join('|');
+  if (!solCache || solCache.clave !== clave) {
+    const sol = SOL.posSol(solFecha(), solHora(), geo), norte = solNorte();
+    solCache = { clave, sol, norte, path: SOL.sombras(nivel, proyecto(), sol, norte) };
+  }
+  return solCache;
+}
+function solTexto() { $('solHoraTxt').textContent = SOL.hhmm(solHora()); }
+function solPoner(cambio) { proyecto().sol = { fecha: solFecha(), hora: solHora(), ...cambio }; avisar('sol'); }
+function solPausar() { cancelAnimationFrame(solCorre); solCorre = 0; const b = $('btnSolPlay'); if (b) b.textContent = '▶ Recorrer el día'; }
+function solAlternar() {
+  if (solCorre) return solPausar();
+  $('btnSolPlay').textContent = '⏸ Pausa';
+  const { sale, pone } = SOL.amanecer(solFecha(), geo); let h = Math.max(solHora(), sale), previo = performance.now();
+  const cuadro = ahora => {
+    h += (ahora - previo) / 1000 * 1.2; previo = ahora;           // 1,2 horas por segundo
+    if (h >= pone) { solPausar(); return; }
+    const q = Math.round(h * 12) / 12;
+    proyecto().sol = { fecha: solFecha(), hora: q }; $('solHora').value = q; solTexto(); pintarPanelSol(true); P.pedir();
+    solCorre = requestAnimationFrame(cuadro);
+  };
+  solCorre = requestAnimationFrame(cuadro);
+}
+let solTabla = null;
+function pintarPanelSol(soloAhora) {
+  const p = proyecto(), q = solAhora(), { sale, pone } = SOL.amanecer(solFecha(), geo), el = $('panelDer');
+  const afuera = espaciosElegidos(nivel, p).filter(e => e.exterior || e.propio);
+  const ahora = `<table class="resumen">
+      <tr><td>Sale el sol</td><td>${sale === null ? '—' : SOL.hhmm(sale)}</td></tr>
+      <tr><td>Se pone</td><td>${pone === null ? '—' : SOL.hhmm(pone)}</td></tr>
+      <tr><td>Altura del sol</td><td>${q.sol.el > 0 ? Math.round(q.sol.el) + '°' : 'de noche'}</td></tr>
+      <tr><td>Viene desde el</td><td>${q.sol.el > 0 ? SOL.cardinal(q.sol.az) + ' (' + Math.round(q.sol.az) + '°)' : '—'}</td></tr>
+      <tr><td>Sombra de un muro de ${String(p.altura).replace('.', ',')} m</td><td>${q.sol.el > 0.5 ? (p.altura * SOL.vectores(q.sol, q.norte).largo).toFixed(1).replace('.', ',') + ' m' : '—'}</td></tr>
+    </table>
+    ${afuera.length ? `<p class="ayuda" style="margin:10px 0 4px">Al sol a las ${SOL.hhmm(solHora())}:</p><table class="resumen">${afuera.map(e => { const v = q.sol.el > 0.5 ? SOL.pctSol(e.poly, q.path) : 0; return `<tr><td>${esc(e.nombre)}</td><td><span class="barrita"><i style="width:${v}%"></i></span>${v} %</td></tr>`; }).join('')}</table>` : ''}`;
+  if (soloAhora && $('solAhora')) { $('solAhora').innerHTML = ahora; return; }
+  const clave = [nivel.id, solFecha(), solNorte(), afuera.map(e => e.id + e.area).join(), p.items.length, p.altura].join('|');
+  if (!solTabla || solTabla.clave !== clave) solTabla = { clave, ...SOL.tablaSol(nivel, p, solFecha(), solNorte(), sale ?? 7, pone ?? 19) };
+  const hi = horaDec(p.horaInicio), hf = horaDec(p.horaFin);
+  el.innerHTML = `
+    <section><h2>Sol y sombras</h2>
+      <p class="ayuda">Sombras que dan los edificios (según sus pisos y la altura de ${String(p.altura).replace('.', ',')} m por piso) y los elementos altos, para la fecha y hora elegidas. Lo gris claro son interiores techados.</p>
+      <div id="solAhora">${ahora}</div>
+    </section>
+    <section><h2>Hora por hora</h2>
+      ${solTabla.esp.length ? `<p class="ayuda">Porcentaje de cada espacio al sol${hi !== null ? '. En amarillo, el horario de la muestra' : ''}.</p>
+      <table class="tablasol"><tr><th>Hora</th>${solTabla.esp.map(e => `<th title="${esc(e.nombre)}">${esc(e.nombre.length > 9 ? e.nombre.slice(0, 8) + '…' : e.nombre)}</th>`).join('')}</tr>
+      ${solTabla.horas.map((h, i) => `<tr class="${hi !== null && hf !== null && h >= Math.floor(hi) && h <= hf ? 'muestra' : ''}"><td>${SOL.hhmm(h)}</td>${solTabla.filas.map(f => `<td>${f[i] === null ? '—' : f[i] + ' %'}</td>`).join('')}</tr>`).join('')}</table>`
+      : '<p class="ayuda">Elegí un espacio al aire libre (por ejemplo el Patio central) o dibujá uno para ver cuánto sol recibe a cada hora.</p>'}
+    </section>
+    <section><h2>Orientación</h2>
+      <label>Norte del plano (grados desde «arriba», sentido horario)<input id="solNorte" type="number" min="0" max="360" step="0.5" value="${solNorte()}"></label>
+      <p class="ayuda">Tomado del símbolo de norte del plano. Ubicación: Montevideo. No se consideran los árboles ni los edificios vecinos.</p>
+    </section>`;
+  $('solNorte').onchange = e => { proyecto().norte = num(e.target.value, 0, 360, geo.norte); avisar('sol'); };
+}
 
 // ---------- simulación de circulación ----------
 let sim = null, simCorre = false, simRaf = 0, simPrevio = 0, simComp = null, tPanelSim = 0;
@@ -244,17 +323,23 @@ function pintarEspacios() {
 
 function pintarCatalogo() {
   const propios = new Set(E.estado.catalogoPropio.map(t => t.id));
-  $('catalogo').innerHTML = E.catalogo().map(t => `
+  const boton = t => `
     <button class="tipo" draggable="true" data-id="${t.id}" title="Agregar ${esc(t.nombre)}">
-      <span class="muestra ${t.modelo === 'mesa-redonda' || t.modelo === 'cilindro' ? 'redonda' : ''}" style="background:${t.color}"></span>
+      <span class="muestra ${['mesa-redonda', 'cilindro', 'persona'].includes(t.modelo) ? 'redonda' : ''}" style="background:${t.color}"></span>
       <span><b>${esc(t.nombre)}</b><small>${t.w} × ${t.d} m</small></span>
       ${propios.has(t.id) ? '<span class="editar" data-a="editar" title="Editar este elemento">✎</span>' : ''}
-    </button>`).join('');
+    </button>`;
+  const todos = E.catalogo(), grupos = [...(E.estado.catalogoPropio.length ? ['Mis elementos'] : []), ...E.GRUPOS];
+  $('catalogo').innerHTML = grupos.map(g => {
+    const l = todos.filter(t => (t.grupo || 'Mis elementos') === g);
+    return l.length ? `<h3>${g}</h3>` + l.map(boton).join('') : '';
+  }).join('');
 }
 
 function pintarPanel() {
   if (editandoPanel || !nivel) return;
   if (vistaSim) return pintarPanelSim();
+  if (vistaSol) return pintarPanelSol();
   const sel = P.seleccionados(), el = $('panelDer');
   if (!sel.length) {
     const its = P.itemsNivel(), cuenta = new Map();
@@ -408,6 +493,7 @@ async function exportarPDF() {
     <label>Tamaño de hoja<select name="formato"><option value="a4">A4 apaisado</option><option value="a3">A3 apaisado</option></select></label>
     <label class="check"><input type="checkbox" name="iso" checked> Agregar vista isométrica</label>
     ${sim && sim.t > 0 && !sim.falta && !$('plano').classList.contains('oculto') ? '<label class="check"><input type="checkbox" name="circ" checked> Agregar el mapa de circulación simulado</label>' : ''}
+    ${$('plano').classList.contains('oculto') ? '' : `<label class="check"><input type="checkbox" name="sol" ${vistaSol ? 'checked' : ''}> Agregar el mapa de sol y sombras (${SOL.hhmm(solHora())} h)</label>`}
     <label class="check"><input type="checkbox" name="lista" checked> Agregar listado de elementos y nombres</label>
     <label class="check"><input type="checkbox" name="detalle" ${ui.detalle ? 'checked' : ''}> Mostrar el detalle del plano (mobiliario fijo, pavimentos)</label>
     ${pie('Descargar PDF')}`);
@@ -418,17 +504,30 @@ async function exportarPDF() {
     const niveles = []; for (const n of lista) niveles.push(await cargarNivel(n));
     let captura = null;
     if (r.iso) { try { await asegurarIso(); captura = (n, w, h) => { iso.actualizarIso(n, p, opIso()); return iso.capturar(w, h); }; } catch { /* sin WebGL: se omite */ } }
-    let circ = null;
+    const paginas = [];
+    const fotoPlano = (capa, capaPantalla) => {
+      const antes = [ui.capa, ui.capaPantalla, ui.ocultar, new Set(ui.seleccion)];
+      ui.capa = capa; ui.capaPantalla = capaPantalla || null; ui.seleccion.clear();
+      const img = P.imagen(); [ui.capa, ui.capaPantalla, ui.ocultar] = antes; antes[3].forEach(i => ui.seleccion.add(i)); P.pedir();
+      return img;
+    };
     if (r.circ && sim) {
-      const antes = [ui.capa, ui.ocultar, new Set(ui.seleccion)];
-      ui.capa = (ctx, k) => sim.dibujar(ctx, k, $('selSimMapa').value === 'ninguno' ? 'transito' : $('selSimMapa').value); ui.seleccion.clear();
-      const img = P.imagen(); [ui.capa, ui.ocultar] = antes; antes[2].forEach(i => ui.seleccion.add(i)); P.pedir();
-      const s = sim.resumen(), q = parSim();
-      if (img) circ = { ...img, nivel: nivel.nombre, lineas: [
+      const mapa = $('selSimMapa').value === 'ninguno' ? 'transito' : $('selSimMapa').value;
+      const img = fotoPlano((ctx, k) => sim.dibujar(ctx, k, mapa)), s = sim.resumen(), q = parSim();
+      if (img) paginas.push({ ...img, titulo: `${nivel.nombre}  ·  Circulación de gente (simulación)`, lineas: [
         `${s.total} visitantes que llegan durante ${q.llegada} min · ${q.permanencia} s por parada${q.tiempoVisita ? ` · hasta ${q.tiempoVisita} min por persona` : ''} · recorrido ${q.modo} · máximo ${s.maxAdentro} personas a la vez`,
-        `${p.horaInicio ? `Sale la última persona ${reloj(s.tUltimo)}` : `Duración ${mmss(s.tUltimo)}`} · recorrido por persona ${s.terminaron ? mmss(s.tiempoProm) + ' min' : '—'} · densidad máxima ${s.densMax.toFixed(1).replace('.', ',')} pers./m² (${nivelDens(s.densMax)}) · ${s.pctAglom.toFixed(1).replace('.', ',')} % del tiempo en aglomeración`] };
+        `${p.horaInicio ? `Sale la última persona ${reloj(s.tUltimo)}` : `Duración ${mmss(s.tUltimo)}`} · recorrido por persona ${s.terminaron ? mmss(s.tiempoProm) + ' min' : '—'} · densidad máxima ${s.densMax.toFixed(1).replace('.', ',')} pers./m² (${nivelDens(s.densMax)}) · ${s.pctAglom.toFixed(1).replace('.', ',')} % del tiempo en aglomeración`],
+        pie: 'Colores: zonas más transitadas o con aglomeración. Línea punteada y números: recorrido guiado sugerido. Círculo rojo: punto más congestionado.' });
     }
-    const doc = generarPDF(p, niveles, { circ, formato: r.formato, iso: !!captura, lista: r.lista, detalle: r.detalle, capturaIso: captura });
+    if (r.sol) {
+      const q = solAhora(), afuera = espaciosElegidos(nivel, p).filter(e => e.exterior || e.propio);
+      const img = fotoPlano((ctx, k) => SOL.dibujarSol(ctx, k, nivel, p, q.sol, q.norte, q.path), (ctx, w, h) => SOL.dibujarRosa(ctx, w, h, q.sol, q.norte));
+      if (img) paginas.push({ ...img, titulo: `${nivel.nombre}  ·  Sol y sombras  ·  ${solFecha().split('-').reverse().join('/')} a las ${SOL.hhmm(solHora())}`, lineas: [
+        q.sol.el > 0.5 ? `Sol a ${Math.round(q.sol.el)}° de altura, desde el ${SOL.cardinal(q.sol.az)} · un muro de ${String(p.altura).replace('.', ',')} m da ${(p.altura * SOL.vectores(q.sol, q.norte).largo).toFixed(1).replace('.', ',')} m de sombra` : 'A esta hora no hay sol.',
+        afuera.length ? 'Al sol: ' + afuera.map(e => `${e.nombre} ${q.sol.el > 0.5 ? SOL.pctSol(e.poly, q.path) : 0} %`).join(' · ') : 'Elegí espacios al aire libre para ver qué porcentaje queda al sol.'],
+        pie: 'Sombras de los edificios y de los elementos altos. Gris claro: interiores techados. No se consideran árboles ni edificios vecinos.' });
+    }
+    const doc = generarPDF(p, niveles, { paginas, formato: r.formato, iso: !!captura, lista: r.lista, detalle: r.detalle, capturaIso: captura });
     if (captura) { iso.actualizarIso(nivel, p, opIso()); if (vistaIso) iso.encuadrar(true); }
     doc.save(archivo(p.nombre) + '.pdf');
     aviso('PDF listo.');
@@ -466,8 +565,13 @@ function conectar() {
   $('selProyecto').onchange = async e => { E.abrirProyecto(e.target.value); await fijarNivel(proyecto().nivel); if (vistaSim) simCrear(); };
   $('btnNuevo').onclick = async () => { const n = await pedirNombre('Nueva muestra', 'Muestra de …'); if (n) { E.crearProyecto(n); await fijarNivel(proyecto().nivel); } };
   $('btnMasProyecto').onclick = menuProyecto;
-  $('selNivel').onchange = async e => { proyecto().nivel = e.target.value; avisar('nivel'); await fijarNivel(e.target.value); simCrear(); if (vistaIso) verIso(true); };
-  $('tabPlano').onclick = () => ver('plano'); $('tabIso').onclick = () => ver('iso'); $('tabSim').onclick = () => ver('sim');
+  $('selNivel').onchange = async e => { proyecto().nivel = e.target.value; avisar('nivel'); await fijarNivel(e.target.value); simCrear(); solTabla = null; if (vistaIso) verIso(true); };
+  $('tabPlano').onclick = () => ver('plano'); $('tabIso').onclick = () => ver('iso'); $('tabSim').onclick = () => ver('sim'); $('tabSol').onclick = () => ver('sol');
+  $('solFecha').onchange = e => solPoner({ fecha: e.target.value });
+  $('solHora').oninput = e => { proyecto().sol = { fecha: solFecha(), hora: +e.target.value }; solTexto(); pintarPanelSol(true); P.pedir(); };
+  $('solHora').onchange = e => solPoner({ hora: +e.target.value });
+  $('btnSolPlay').onclick = solAlternar; $('btnEncuadrar3').onclick = P.encuadrar;
+  $('btnSolMuestra').onclick = () => { const h = horaDec(proyecto().horaInicio); if (h === null) return aviso('Cargá primero la hora de inicio de la muestra.'); $('solHora').value = h; solPoner({ hora: h, fecha: proyecto().fecha || solFecha() }); $('solFecha').value = solFecha(); solTexto(); };
   $('btnSimPlay').onclick = simAlternar; $('btnSimReset').onclick = () => { simCrear(); };
   $('selSimMapa').onchange = () => P.pedir(); $('btnSimComparar').onclick = simComparar; $('btnEncuadrar2').onclick = P.encuadrar;
   $('btnDeshacer').onclick = () => E.deshacer(); $('btnRehacer').onclick = () => E.rehacer();
@@ -497,7 +601,7 @@ function conectar() {
       if (propio) propio.nombre = n; else p.renombres[id] = n;
     } else if (a === 'borrar') { P.quitarEspacio(id); return; }
     else if (a === 'forma') {
-      if (vistaIso || vistaSim) await ver('plano');
+      if (vistaIso || vistaSim || vistaSol) await ver('plano');
       ui.alHerramienta('forma'); ui.activo = id;
       const e = espaciosDe(nivel, p).find(x => x.id === id); P.centrarEn(e.poly); return;
     } else {
@@ -511,7 +615,7 @@ function conectar() {
     const b = e.target.closest('.tipo'); if (!b) return;
     const t = E.catalogo().find(c => c.id === b.dataset.id);
     if (e.target.dataset.a === 'editar') return editarTipo(t);
-    if (vistaIso) await ver('plano');
+    if (vistaIso || vistaSol) await ver('plano');
     P.agregar(t);
   };
   $('catalogo').addEventListener('dragstart', e => { const b = e.target.closest('.tipo'); if (b) e.dataTransfer.setData('text/plain', b.dataset.id); });
@@ -524,7 +628,7 @@ function conectar() {
   $('chkDetalle').onchange = e => { ui.detalle = e.target.checked; P.pedir(); };
   $('btnEncuadrar').onclick = P.encuadrar;
   $('btnGiroIzq').onclick = () => iso?.girar(-1); $('btnGiroDer').onclick = () => iso?.girar(1);
-  $('selMuros').onchange = $('chkEtiquetas3d').onchange = () => iso?.actualizarIso(nivel, proyecto(), opIso());
+  $('selMuros').onchange = $('chkEtiquetas3d').onchange = $('chkSol3d').onchange = () => iso?.actualizarIso(nivel, proyecto(), opIso());
   $('btnPNG').onclick = () => iso && descargar(archivo(proyecto().nombre) + '-isometrica.png', iso.capturarVista());
 
   window.addEventListener('keydown', e => {
@@ -569,8 +673,8 @@ async function arrancar() {
     // tras deshacer o cambiar de muestra puede haber ids seleccionados que ya no existen
     const ids = new Set(proyecto().items.map(i => i.id));
     [...ui.seleccion].forEach(id => { if (!ids.has(id)) ui.seleccion.delete(id); });
-    pintarBarra();
-    if (que !== 'nombre' && sim) { sim = null; simComp = null; simPausar(); if (vistaSim) simCrear(); }
+    pintarBarra(); solCache = null;
+    if (que !== 'nombre' && que !== 'sol' && sim) { sim = null; simComp = null; simPausar(); if (vistaSim) simCrear(); }
     if (que !== 'items' && que !== 'nombre') pintarEspacios();
     if (que === 'catalogo' || que === 'todo') pintarCatalogo();
     if (que !== 'nombre') pintarPanel();

@@ -90,10 +90,10 @@ export function generarPDF(proy, niveles, op) {
         for (let i = 0; i < 32; i++) { const t = i / 32 * 2 * Math.PI, lx = Math.cos(t) * it.w / 2, ly = Math.sin(t) * it.d / 2; pts.push([X(it.x + lx * c - ly * sn), Y(it.y + lx * sn + ly * c)]); }
       } else pts = esquinas(it).map(p => [X(p[0]), Y(p[1])]);
       doc.setLineWidth(0.12); doc.setDrawColor(60, 60, 60); doc.setFillColor(...col);
-      if (it.modelo === 'zona' || it.modelo === 'stand') {
+      if (it.modelo === 'zona' || it.modelo === 'stand' || it.modelo === 'techo') {
         doc.saveGraphicsState(); doc.setGState(new doc.GState({ opacity: 0.18 })); poligono(doc, pts, 'F'); doc.restoreGraphicsState();
         doc.setDrawColor(...col);
-        if (it.modelo === 'zona') { doc.setLineDashPattern([1, 0.7], 0); poligono(doc, pts, 'S'); doc.setLineDashPattern([], 0); }
+        if (it.modelo !== 'stand') { doc.setLineDashPattern([1, 0.7], 0); poligono(doc, pts, 'S'); doc.setLineDashPattern([], 0); }
         else {
           poligono(doc, pts, 'S'); doc.setLineWidth(Math.max(0.5, s * 0.08));
           const mix = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
@@ -111,7 +111,7 @@ export function generarPDF(proy, niveles, op) {
         fila.ref = String(++ref);
         t = ajustarTexto(fila.ref, it.w * s, it.d * s, 3); t.tam = Math.max(t.tam, 1.1);
       }
-      const claro = it.modelo === 'zona' || it.modelo === 'stand';
+      const claro = it.modelo === 'zona' || it.modelo === 'stand' || it.modelo === 'techo';
       doc.setTextColor(...(it.modelo === 'texto' ? col : rgb(claro ? '#1c2430' : contraste(it.color))));
       doc.setFont('helvetica', 'bold'); doc.setFontSize(t.tam * 72 / 25.4);
       let g = ((it.rot % 360) + 360) % 360; if (g > 90 && g <= 270) g -= 180;
@@ -144,15 +144,15 @@ export function generarPDF(proy, niveles, op) {
     }
   }
 
-  if (op.circ) {
-    pagina(); encabezado(`${op.circ.nivel}  ·  Circulación de gente (simulación)`);
+  for (const pg of op.paginas || []) {        // mapas capturados del plano: circulación, sol y sombras
+    pagina(); encabezado(pg.titulo);
     doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(60, 68, 82);
-    op.circ.lineas.forEach((l, i) => doc.text(l, M, M + 21 + i * 4.5));
-    const y0 = M + 21 + op.circ.lineas.length * 4.5 + 1, h = PH - y0 - M - 4, w = PW - 2 * M, ar = op.circ.w / op.circ.h;
+    pg.lineas.forEach((l, i) => doc.text(l, M, M + 21 + i * 4.5));
+    const y0 = M + 21 + pg.lineas.length * 4.5 + 1, h = PH - y0 - M - 4, w = PW - 2 * M, ar = pg.w / pg.h;
     const iw = Math.min(w, h * ar), ih = iw / ar;
-    doc.addImage(op.circ.url, 'JPEG', M + (w - iw) / 2, y0, iw, ih, undefined, 'FAST');
+    doc.addImage(pg.url, 'JPEG', M + (w - iw) / 2, y0, iw, ih, undefined, 'FAST');
     doc.setFontSize(7.5); doc.setTextColor(102, 112, 133);
-    doc.text('Colores: zonas más transitadas o con aglomeración. Línea punteada y números: recorrido guiado sugerido. Círculo rojo: punto más congestionado.', M, PH - M - 0.5);
+    doc.text(pg.pie, M, PH - M - 0.5);
   }
 
   if (op.lista !== false) listado(doc, proy, niveles, filas, { PW, PH, M, pagina, encabezado });

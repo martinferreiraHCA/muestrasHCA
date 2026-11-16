@@ -1,11 +1,14 @@
 // Carga de los planos por nivel (generados con tools/convertir_plano.py) y geometría compartida.
 
 const cache = new Map();
+/** Ubicación y orientación del predio (para el estudio de sol). */
+export const geo = {};
 
 export async function cargarIndice() {
   const r = await fetch('data/niveles.json');
   if (!r.ok) throw new Error('No se pudo leer data/niveles.json');
-  return (await r.json()).niveles;
+  const j = await r.json(); Object.assign(geo, { lat: j.lat, lon: j.lon, huso: j.huso, norte: j.norte });
+  return j.niveles;
 }
 
 function aMetros(lista) {
@@ -26,7 +29,7 @@ export async function cargarNivel(info) {
   const d = await r.json();
   const n = {
     id: d.id, nombre: d.nombre, ancho: d.ancho / 100, alto: d.alto / 100,
-    muros: aMetros(d.muros), aberturas: aMetros(d.aberturas), barreras: aMetros(d.barreras || []), detalle: aMetros(d.detalle),
+    muros: aMetros(d.muros), aberturas: aMetros(d.aberturas), barreras: aMetros(d.barreras || []), pisos: d.pisos || null, detalle: aMetros(d.detalle),
     locales: d.locales.map(l => ({
       id: l.id, nombre: l.nombre, auto: !!l.auto, exterior: !!l.exterior, area: l.area,
       poly: l.poly.map(p => [p[0] / 100, p[1] / 100]),

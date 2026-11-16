@@ -2,29 +2,62 @@
 
 const CLAVE = 'muestrasHCA.v1';
 
+export const GRUPOS = ['Mesas y asientos', 'Stands y exhibición', 'Escenario y audiovisual', 'Ambientación y señalización', 'Circulación'];
+const G = (grupo, lista) => lista.map(t => ({ ...t, grupo }));
 export const CATALOGO_BASE = [
-  { id: 'mesa', nombre: 'Mesa', modelo: 'mesa', w: 1.2, d: 0.6, h: 0.75, color: '#c9a36b' },
-  { id: 'mesa-escolar', nombre: 'Mesa escolar', modelo: 'mesa', w: 0.6, d: 0.45, h: 0.72, color: '#d8b98a' },
-  { id: 'tablon', nombre: 'Tablón', modelo: 'mesa', w: 2.0, d: 0.8, h: 0.75, color: '#b98f55' },
-  { id: 'mesa-redonda', nombre: 'Mesa redonda', modelo: 'mesa-redonda', w: 1.2, d: 1.2, h: 0.75, color: '#c9a36b' },
-  { id: 'silla', nombre: 'Silla', modelo: 'silla', w: 0.45, d: 0.45, h: 0.45, color: '#5b7fb8' },
-  { id: 'banco', nombre: 'Banco largo', modelo: 'banco', w: 2.0, d: 0.35, h: 0.45, color: '#8a6a45' },
-  { id: 'stand', nombre: 'Stand', modelo: 'stand', w: 3.0, d: 2.0, h: 2.4, color: '#e2574c' },
-  { id: 'panel', nombre: 'Panel / biombo', modelo: 'panel', w: 1.2, d: 0.06, h: 1.8, color: '#6f7c8c' },
-  { id: 'tarima', nombre: 'Tarima', modelo: 'caja', w: 4.0, d: 3.0, h: 0.4, color: '#8d7b68' },
-  { id: 'pantalla', nombre: 'Pantalla / TV', modelo: 'panel', w: 1.4, d: 0.1, h: 1.9, color: '#2b2f36' },
-  { id: 'zona', nombre: 'Zona marcada', modelo: 'zona', w: 3.0, d: 3.0, h: 0, color: '#3aa76d' },
-  { id: 'cartel', nombre: 'Texto / cartel', modelo: 'texto', w: 2.0, d: 0.5, h: 0, color: '#1c2430', etiqueta: 'Texto' },
-  // para simular la circulación de gente
-  { id: 'entrada', nombre: 'Entrada', modelo: 'zona', w: 1.6, d: 1.0, h: 0, color: '#1a9c4b', etiqueta: 'Entrada' },
-  { id: 'salida', nombre: 'Salida', modelo: 'zona', w: 1.6, d: 1.0, h: 0, color: '#c0392b', etiqueta: 'Salida' },
-  { id: 'persona', nombre: 'Persona', modelo: 'persona', w: 0.5, d: 0.5, h: 1.7, color: '#f08c00' },
+  ...G('Mesas y asientos', [
+    { id: 'mesa', nombre: 'Mesa', modelo: 'mesa', w: 1.2, d: 0.6, h: 0.75, color: '#c9a36b' },
+    { id: 'mesa-escolar', nombre: 'Mesa escolar', modelo: 'mesa', w: 0.6, d: 0.45, h: 0.72, color: '#d8b98a' },
+    { id: 'tablon', nombre: 'Tablón', modelo: 'mesa', w: 2.0, d: 0.8, h: 0.75, color: '#b98f55' },
+    { id: 'mesa-redonda', nombre: 'Mesa redonda', modelo: 'mesa-redonda', w: 1.2, d: 1.2, h: 0.75, color: '#c9a36b' },
+    { id: 'mesa-alta', nombre: 'Mesa alta', modelo: 'mesa-redonda', w: 0.7, d: 0.7, h: 1.1, color: '#a9825a' },
+    { id: 'silla', nombre: 'Silla', modelo: 'silla', w: 0.45, d: 0.45, h: 0.45, color: '#5b7fb8' },
+    { id: 'banco', nombre: 'Banco largo', modelo: 'banco', w: 2.0, d: 0.35, h: 0.45, color: '#8a6a45' },
+    { id: 'puff', nombre: 'Puff', modelo: 'cilindro', w: 0.6, d: 0.6, h: 0.4, color: '#d9627a' },
+    { id: 'grada', nombre: 'Grada / tribuna', modelo: 'caja', w: 4.0, d: 1.5, h: 0.9, color: '#9a8f80' },
+  ]),
+  ...G('Stands y exhibición', [
+    { id: 'stand', nombre: 'Stand', modelo: 'stand', w: 3.0, d: 2.0, h: 2.4, color: '#e2574c' },
+    { id: 'gazebo', nombre: 'Gazebo / carpa', modelo: 'techo', w: 3.0, d: 3.0, h: 2.5, color: '#2f9e8f' },
+    { id: 'sombrilla', nombre: 'Sombrilla', modelo: 'techo', w: 2.5, d: 2.5, h: 2.2, color: '#e8a33d' },
+    { id: 'panel', nombre: 'Panel / biombo', modelo: 'panel', w: 1.2, d: 0.06, h: 1.8, color: '#6f7c8c' },
+    { id: 'cartelera', nombre: 'Cartelera / pizarrón', modelo: 'panel', w: 1.5, d: 0.08, h: 1.9, color: '#3b6e4f' },
+    { id: 'banner', nombre: 'Banner', modelo: 'panel', w: 0.85, d: 0.25, h: 2.0, color: '#7048a8' },
+    { id: 'caballete', nombre: 'Caballete', modelo: 'caja', w: 0.7, d: 0.6, h: 1.7, color: '#b08d57' },
+    { id: 'vitrina', nombre: 'Exhibidor / vitrina', modelo: 'caja', w: 1.2, d: 0.5, h: 1.8, color: '#8fb3c9' },
+    { id: 'maqueta', nombre: 'Maqueta', modelo: 'caja', w: 1.0, d: 1.0, h: 0.9, color: '#c2b8a3' },
+  ]),
+  ...G('Escenario y audiovisual', [
+    { id: 'tarima', nombre: 'Tarima', modelo: 'caja', w: 4.0, d: 3.0, h: 0.4, color: '#8d7b68' },
+    { id: 'escenario', nombre: 'Escenario', modelo: 'caja', w: 6.0, d: 4.0, h: 0.8, color: '#6e5f50' },
+    { id: 'pantalla', nombre: 'Pantalla / TV', modelo: 'panel', w: 1.4, d: 0.1, h: 1.9, color: '#2b2f36' },
+    { id: 'proyeccion', nombre: 'Pantalla de proyección', modelo: 'panel', w: 2.4, d: 0.08, h: 2.3, color: '#e9ecef' },
+    { id: 'parlante', nombre: 'Parlante', modelo: 'caja', w: 0.5, d: 0.45, h: 1.3, color: '#343a40' },
+    { id: 'atril', nombre: 'Atril', modelo: 'caja', w: 0.6, d: 0.5, h: 1.1, color: '#7a5c3a' },
+    { id: 'consola', nombre: 'Consola de sonido', modelo: 'mesa', w: 1.5, d: 0.7, h: 0.9, color: '#495057' },
+  ]),
+  ...G('Ambientación y señalización', [
+    { id: 'zona', nombre: 'Zona marcada', modelo: 'zona', w: 3.0, d: 3.0, h: 0, color: '#3aa76d' },
+    { id: 'alfombra', nombre: 'Alfombra', modelo: 'zona', w: 3.0, d: 2.0, h: 0, color: '#b0413e' },
+    { id: 'cartel', nombre: 'Texto / cartel', modelo: 'texto', w: 2.0, d: 0.5, h: 0, color: '#1c2430', etiqueta: 'Texto' },
+    { id: 'flecha', nombre: 'Flecha de sentido', modelo: 'texto', w: 1.5, d: 0.7, h: 0, color: '#1f4e9c', etiqueta: '→' },
+    { id: 'valla', nombre: 'Valla', modelo: 'panel', w: 2.0, d: 0.06, h: 1.1, color: '#adb5bd' },
+    { id: 'cordon', nombre: 'Cinta / cordón', modelo: 'panel', w: 3.0, d: 0.05, h: 0.95, color: '#c92a2a' },
+    { id: 'planta', nombre: 'Planta / maceta', modelo: 'cilindro', w: 0.6, d: 0.6, h: 1.2, color: '#4c9a52' },
+    { id: 'tacho', nombre: 'Tacho de residuos', modelo: 'cilindro', w: 0.5, d: 0.5, h: 0.9, color: '#5c677d' },
+    { id: 'dispenser', nombre: 'Dispenser de agua', modelo: 'cilindro', w: 0.4, d: 0.4, h: 1.2, color: '#74c0fc' },
+  ]),
+  ...G('Circulación', [
+    { id: 'entrada', nombre: 'Entrada', modelo: 'zona', w: 1.6, d: 1.0, h: 0, color: '#1a9c4b', etiqueta: 'Entrada' },
+    { id: 'salida', nombre: 'Salida', modelo: 'zona', w: 1.6, d: 1.0, h: 0, color: '#c0392b', etiqueta: 'Salida' },
+    { id: 'persona', nombre: 'Persona', modelo: 'persona', w: 0.5, d: 0.5, h: 1.7, color: '#f08c00' },
+  ]),
 ];
 
 export const MODELOS = {
   'mesa': 'Mesa rectangular', 'mesa-redonda': 'Mesa redonda', 'silla': 'Silla', 'banco': 'Banco',
   'stand': 'Stand (con fondo y laterales)', 'panel': 'Panel vertical', 'caja': 'Caja / volumen',
-  'cilindro': 'Cilindro', 'zona': 'Zona en el piso', 'texto': 'Solo texto',
+  'cilindro': 'Cilindro', 'techo': 'Techo con patas (gazebo, toldo)', 'zona': 'Zona en el piso', 'texto': 'Solo texto',
 };
 
 export const uid = () => Math.random().toString(36).slice(2, 10);

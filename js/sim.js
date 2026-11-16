@@ -38,7 +38,7 @@ export class Simulacion {
     // obstáculos: muros, ventanas y mobiliario
     for (const S of [nivel.muros, nivel.barreras]) for (let i = 0; i < S.length; i += 4) this.#linea(S[i], S[i + 1], S[i + 2], S[i + 3]);
     for (const it of items) {
-      if (it.modelo === 'zona' || it.modelo === 'texto' || it.modelo === 'persona') continue;
+      if (it.modelo === 'zona' || it.modelo === 'texto' || it.modelo === 'persona' || it.modelo === 'techo') continue;
       const a = it.rot * Math.PI / 180, c = Math.cos(a), s = Math.sin(a), M = (lx, ly) => [it.x + lx * c - ly * s, it.y + lx * s + ly * c];
       if (it.modelo === 'stand') {
         const w = it.w / 2, d = it.d / 2, f = -d + it.d * 0.6;

@@ -161,6 +161,7 @@ def nombre_lindo(s):
 
 RES = 0.04  # m por píxel para la detección de locales
 indice = []
+datos = {}
 for nid, nombre, (ax, ay, bx, by) in NIVELES:
     def dentro(s): return ax <= s[0] <= bx and ay <= s[1] <= by and ax <= s[2] <= bx and ay <= s[3] <= by
     S = {k: [s for s in v if dentro(s)] for k, v in segs.items()}
@@ -361,11 +362,10 @@ for nid, nombre, (ax, ay, bx, by) in NIVELES:
         'etiquetas': [{'x': cm(e[0]), 'y': cm(e[1]), 't': e[2]+(' '+e[3] if e[3] else '')} for e in etiquetas],
         'locales': locales,
     }
-    json.dump(data, open(os.path.join(OUT, nid+'.json'), 'w'), ensure_ascii=False, separators=(',', ':'))
+    datos[nid] = data
     indice.append({'id': nid, 'nombre': nombre, 'archivo': nid+'.json', 'ancho': cm(W), 'alto': cm(H)})
     print(nid, f'{W:.1f}x{H:.1f} m', 'muros', len(data['muros'])//4, 'abert', len(data['aberturas'])//4, 'det', len(data['detalle'])//4,
-          'etiquetas', len(etiquetas), 'locales', len(locales), 'con nombre', sum(1 for l in locales if not l.get('auto')),
-          'KB', os.path.getsize(os.path.join(OUT, nid+'.json'))//1024)
+          'etiquetas', len(etiquetas), 'locales', len(locales), 'con nombre', sum(1 for l in locales if not l.get('auto')))
     print('  sin local:', [e[2]+' '+str(e[3]) for e in etiquetas if id(e) not in usados])
     if DBG:
         sc = 20  # px por metro
@@ -380,4 +380,44 @@ for nid, nombre, (ax, ay, bx, by) in NIVELES:
         for l in locales:
             cv2.putText(im, l['nombre'].encode('ascii', 'replace').decode(), (l['cx']*sc//100-30, l['cy']*sc//100), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 0, 200), 1)
         cv2.imwrite(os.path.join(DBG, nid+'.png'), im)
-json.dump({'niveles': indice}, open(os.path.join(OUT, 'niveles.json'), 'w'), ensure_ascii=False, indent=1)
+# --- alturas para el estudio de sol y sombras ---
+# Los niveles se dibujaron en láminas separadas: se calcula el desfasaje de cada uno respecto de
+# planta baja comparando los dibujos, y con eso cuántos pisos hay encima de cada tramo de muro.
+R2 = 0.2
+def trama(d, claves=('muros', 'aberturas')):
+    im = np.zeros((int(d['alto']/100/R2)+2, int(d['ancho']/100/R2)+2), np.uint8)
+    for k in claves:
+        for x1, y1, x2, y2 in np.array(d[k]).reshape(-1, 4): cv2.line(im, (int(x1/100/R2), int(y1/100/R2)), (int(x2/100/R2), int(y2/100/R2)), 255, 1)
+    return cv2.GaussianBlur(im, (0, 0), 1.5)
+def huella(d):
+    im = np.zeros((int(d['alto']/100/R2)+2, int(d['ancho']/100/R2)+2), np.uint8)
+    for l in d['locales']:
+        if not l.get('exterior'): cv2.fillPoly(im, [(np.array(l['poly'])/100/R2).astype(np.int32)], 255)
+    im = cv2.dilate(im, np.ones((7, 7), np.uint8))
+    return cv2.morphologyEx(im, cv2.MORPH_CLOSE, np.ones((25, 25), np.uint8))
+orden = [n for n in ('pb', 'p1', 'p2') if n in datos]
+base = trama(datos['pb']); mg = int(6/R2); desf = {'pb': (0.0, 0.0)}
+for n in orden[1:]:
+    t = trama(datos[n])[mg:-mg, mg:-mg]
+    lienzo = cv2.copyMakeBorder(base, mg, mg, mg, mg, cv2.BORDER_CONSTANT, value=0)
+    if lienzo.shape[0] < t.shape[0]+1 or lienzo.shape[1] < t.shape[1]+1:
+        lienzo = cv2.copyMakeBorder(lienzo, 0, max(0, t.shape[0]+1-lienzo.shape[0]), 0, max(0, t.shape[1]+1-lienzo.shape[1]), cv2.BORDER_CONSTANT, value=0)
+    r = cv2.matchTemplate(lienzo, t, cv2.TM_CCORR_NORMED); _, v, _, loc = cv2.minMaxLoc(r)
+    desf[n] = ((loc[0]-2*mg)*R2, (loc[1]-2*mg)*R2)       # nivel + desfasaje = planta baja
+    print('desfasaje', n, desf[n], 'coincidencia', round(float(v), 3))
+huellas = {n: huella(datos[n]) for n in orden}
+for nid, d in datos.items():
+    M_ = np.array(d['muros']).reshape(-1, 4)/100
+    pisos = np.ones(len(M_), np.uint8)
+    if nid in orden:
+        for sup in orden[orden.index(nid)+1:]:
+            h = huellas[sup]; ox, oy = desf[nid][0]-desf[sup][0], desf[nid][1]-desf[sup][1]
+            mx = ((M_[:, 0]+M_[:, 2])/2+ox)/R2; my = ((M_[:, 1]+M_[:, 3])/2+oy)/R2
+            ok = (mx >= 0) & (my >= 0) & (mx < h.shape[1]) & (my < h.shape[0])
+            pisos[ok] += (h[my[ok].astype(int), mx[ok].astype(int)] > 0).astype(np.uint8)
+    d['pisos'] = pisos.tolist()
+    print(nid, 'muros por cantidad de pisos encima:', np.bincount(pisos).tolist()[1:])
+    json.dump(d, open(os.path.join(OUT, nid+'.json'), 'w'), ensure_ascii=False, separators=(',', ':'))
+# Norte: el símbolo del plano apunta a 215,5° (antihorario desde +X del dibujo); en pantalla,
+# con Y hacia abajo, son 234,5° en sentido horario desde "arriba".
+json.dump({'norte': 234.5, 'lat': -34.86, 'lon': -56.19, 'huso': -3, 'niveles': indice}, open(os.path.join(OUT, 'niveles.json'), 'w'), ensure_ascii=False, indent=1)

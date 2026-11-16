@@ -22,6 +22,7 @@
     <button id="tabPlano" class="activo" role="tab">Planta</button>
     <button id="tabIso" role="tab">Isométrica</button>
     <button id="tabSim" role="tab">Circulación</button>
+    <button id="tabSol" role="tab">Sol y sombras</button>
   </div>
   <div class="flex1"></div>
   <button id="btnDeshacer" title="Deshacer (Ctrl+Z)">↶</button>
@@ -88,6 +89,7 @@
         </select>
       </label>
       <label><input type="checkbox" id="chkEtiquetas3d" checked> Nombres</label>
+      <label title="Sombras según la fecha y la hora elegidas en «Sol y sombras»"><input type="checkbox" id="chkSol3d"> Sol <span id="solHora3d"></span></label>
       <button id="btnPNG">Descargar imagen</button>
     </div>
     <div class="herramientas oculto" id="herramientasSim">
@@ -101,6 +103,13 @@
       </label>
       <button id="btnSimComparar" title="Corre la simulación completa con recorrido libre y guiado y compara">Comparar recorridos</button>
       <button id="btnEncuadrar2">Encuadrar</button>
+    </div>
+    <div class="herramientas oculto" id="herramientasSol">
+      <label>Fecha <input id="solFecha" type="date"></label>
+      <label>Hora <input id="solHora" type="range" min="5" max="21" step="0.25" value="12"> <b id="solHoraTxt">12:00</b></label>
+      <button id="btnSolPlay" title="Recorrer el día">▶ Recorrer el día</button>
+      <button id="btnSolMuestra" title="Ir a la hora de inicio de la muestra">Hora de la muestra</button>
+      <button id="btnEncuadrar3">Encuadrar</button>
     </div>
     <canvas id="plano" tabindex="0"></canvas>
     <div id="iso" class="oculto"></div>
