@@ -1,0 +1,32 @@
+{
+ "niveles": [
+  {
+   "id": "ss",
+   "nombre": "Subsuelo",
+   "archivo": "ss.json",
+   "ancho": 2730,
+   "alto": 3210
+  },
+  {
+   "id": "pb",
+   "nombre": "Planta baja",
+   "archivo": "pb.json",
+   "ancho": 12146,
+   "alto": 7082
+  },
+  {
+   "id": "p1",
+   "nombre": "Primer piso",
+   "archivo": "p1.json",
+   "ancho": 11316,
+   "alto": 7082
+  },
+  {
+   "id": "p2",
+   "nombre": "Segundo piso",
+   "archivo": "p2.json",
+   "ancho": 11316,
+   "alto": 7082
+  }
+ ]
+}

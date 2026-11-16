@@ -1,0 +1,5 @@
+node_modules/
+*.dwg
+*.ndjson
+tools/blocks.json
+tools/meta.json

@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Muestras HCA · Organizador de espacios</title>
+<link rel="stylesheet" href="css/estilos.css">
+<script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
+<script src="vendor/jspdf.umd.min.js" defer></script>
+</head>
+<body>
+<header class="barra">
+  <div class="marca">Muestras <b>HCA</b></div>
+  <select id="selProyecto" title="Muestra actual"></select>
+  <button id="btnNuevo" title="Crear una muestra nueva">+ Nueva</button>
+  <button id="btnMasProyecto" title="Duplicar, exportar, importar o eliminar">⋯</button>
+  <div class="sep"></div>
+  <label class="campo-inline">Nivel
+    <select id="selNivel"></select>
+  </label>
+  <div class="tabs" role="tablist">
+    <button id="tabPlano" class="activo" role="tab">Planta</button>
+    <button id="tabIso" role="tab">Isométrica</button>
+  </div>
+  <div class="flex1"></div>
+  <button id="btnDeshacer" title="Deshacer (Ctrl+Z)">↶</button>
+  <button id="btnRehacer" title="Rehacer (Ctrl+Y)">↷</button>
+  <button id="btnPDF" class="primario">Generar PDF</button>
+</header>
+
+<main>
+  <aside class="panel izq">
+    <section>
+      <h2>Muestra</h2>
+      <label>Nombre<input id="inNombre" type="text" placeholder="Ej.: Muestra de Ciencias"></label>
+      <div class="fila2">
+        <label>Fecha<input id="inFecha" type="date"></label>
+        <label>Altura (m)<input id="inAltura" type="number" min="1" max="8" step="0.1"></label>
+      </div>
+    </section>
+
+    <section>
+      <h2>Espacios <span id="resEspacios" class="chip"></span></h2>
+      <p class="ayuda">Marcá los lugares donde va a pasar la muestra. También podés tocarlos en el plano con la herramienta <b>Elegir espacios</b>, o dibujar uno propio.</p>
+      <input id="inBuscarEsp" type="search" placeholder="Buscar espacio…">
+      <div id="listaEspacios" class="lista"></div>
+    </section>
+
+    <section>
+      <h2>Elementos</h2>
+      <p class="ayuda">Tocá un elemento para agregarlo, o arrastralo al plano.</p>
+      <div id="catalogo" class="catalogo"></div>
+      <button id="btnNuevoTipo" class="ancho">+ Crear mi propio elemento</button>
+    </section>
+  </aside>
+
+  <div class="lienzo">
+    <div class="herramientas" id="herramientas">
+      <button data-h="mover" class="activo" title="Seleccionar y mover (V)">Mover</button>
+      <button data-h="espacios" title="Tocar salones para elegirlos (E)">Elegir espacios</button>
+      <button data-h="dibujar" title="Dibujar un espacio propio punto a punto (D)">Dibujar espacio</button>
+      <button data-h="medir" title="Medir una distancia (M)">Medir</button>
+      <span class="sepv"></span>
+      <label title="Ajustar a una grilla de 5 cm"><input type="checkbox" id="chkIman" checked> Imán</label>
+      <label title="Mostrar mobiliario y pavimentos del plano"><input type="checkbox" id="chkDetalle" checked> Detalle</label>
+      <button id="btnEncuadrar" title="Centrar la vista en los espacios elegidos (F)">Encuadrar</button>
+    </div>
+    <div class="herramientas oculto" id="herramientasIso">
+      <button id="btnGiroIzq" title="Girar 90° a la izquierda">⟲ Girar</button>
+      <button id="btnGiroDer" title="Girar 90° a la derecha">Girar ⟳</button>
+      <label>Muros
+        <select id="selMuros">
+          <option value="completos">Altura completa</option>
+          <option value="bajos">Bajos (1 m)</option>
+          <option value="ocultos">Ocultos</option>
+        </select>
+      </label>
+      <label><input type="checkbox" id="chkEtiquetas3d" checked> Nombres</label>
+      <button id="btnPNG">Descargar imagen</button>
+    </div>
+    <canvas id="plano" tabindex="0"></canvas>
+    <div id="iso" class="oculto"></div>
+    <div id="pista" class="pista"></div>
+    <div id="cargando" class="cargando">Cargando plano…</div>
+  </div>
+
+  <aside class="panel der" id="panelDer"></aside>
+</main>
+
+<dialog id="dlg"></dialog>
+<div id="aviso" class="aviso"></div>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
