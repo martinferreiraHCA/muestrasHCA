@@ -174,30 +174,33 @@ for nid, nombre, (ax, ay, bx, by) in NIVELES:
             if key in visto: continue
             visto.add(key); out += q
         return out
-    # --- detección de locales: componentes conexas del espacio libre ---
+    # --- detección de locales ---
+    # Imagen de barreras (4 cm por píxel): muros + aberturas pegadas a un muro + cierre de puertas.
+    RES = 0.04
     iw, ih = int(W/RES)+1, int(H/RES)+1
     img = np.zeros((ih, iw), np.uint8)
     px = lambda x, y: (int(round(tx(x)/RES)), int(round(ty(y)/RES)))
     for x1, y1, x2, y2 in S['m']: cv2.line(img, px(x1, y1), px(x2, y2), 255, 2)
-    # aberturas: solo las piezas chicas pegadas a un muro (ventanas y puertas),
-    # no las grillas de pavimento ni los límites del predio que comparten capa
     ab = np.zeros_like(img)
     for x1, y1, x2, y2 in S['a']: cv2.line(ab, px(x1, y1), px(x2, y2), 255, 2)
     cerca = cv2.dilate(img, np.ones((9, 9), np.uint8))
     na, la, sa, _ = cv2.connectedComponentsWithStats(ab, connectivity=8)
-    toca = np.unique(la[(cerca > 0) & (ab > 0)])
     ok = np.zeros(na, bool)
-    for i in toca:
+    for i in np.unique(la[(cerca > 0) & (ab > 0)]):
         if i and max(sa[i, 2], sa[i, 3])*RES < 7.5: ok[i] = True
-    img |= (ok[la]*255).astype(np.uint8)
-    for h, a, b in puertas:
-        if ax <= h[0] <= bx and ay <= h[1] <= by:
-            cv2.line(img, px(*h), px(*a), 255, 2); cv2.line(img, px(*h), px(*b), 255, 2)
-    # cerrar vanos de hasta ~2,1 m en horizontal y en vertical
-    g = int(2.1/RES)
-    img = img | cv2.morphologyEx(img, cv2.MORPH_CLOSE, np.ones((1, g), np.uint8)) | cv2.morphologyEx(img, cv2.MORPH_CLOSE, np.ones((g, 1), np.uint8))
-    libre = cv2.erode(255-img, np.ones((3, 3), np.uint8))
-    n, lab, stats, cent = cv2.connectedComponentsWithStats(libre, connectivity=4)
+    ab_ok = ok[la]
+    img |= (ab_ok*255).astype(np.uint8)
+    pu = [(h, math.hypot(a[0]-h[0], a[1]-h[1]), a, b) for h, a, b in puertas if ax <= h[0] <= bx and ay <= h[1] <= by]
+    for h, r, a, b in pu:
+        cv2.line(img, px(*h), px(*a), 255, 2); cv2.line(img, px(*h), px(*b), 255, 2)
+    # barreras para la simulación de circulación: ventanas sí, puertas no
+    barreras = []
+    for x1, y1, x2, y2 in S['a']:
+        mxp, myp = px((x1+x2)/2, (y1+y2)/2)
+        if not (0 <= mxp < iw and 0 <= myp < ih and ab_ok[myp, mxp]): continue
+        if any(math.hypot(x1-h[0], y1-h[1]) <= r+0.08 and math.hypot(x2-h[0], y2-h[1]) <= r+0.08 for h, r, _, _ in pu): continue
+        barreras.append((x1, y1, x2, y2))
+
     # etiquetas de locales
     T = [(tx(x), ty(y), h, t) for x, y, h, t in textos if ax <= x <= bx and ay <= y <= by and t]
     etiquetas = []
@@ -206,46 +209,122 @@ for nid, nombre, (ax, ay, bx, by) in NIVELES:
         nom = t; num = None
         for x2, y2, h2, t2 in T:
             dx, dy = x2-x, y2-y
-            if abs(dx) < 2.2 and 0.15 < dy < 0.9 and CONT.match(t2) and len(nom) < 40: nom += ' '+t2
+            if abs(dx) < 2.2 and 0.15 < dy < 0.9 and CONT.match(t2) and len(nom) < 40: nom += ' '+t2; y += 0  # texto en dos renglones
+        nl = nom.count(' ')  # el número va debajo del último renglón
         for x2, y2, h2, t2 in T:
             dx, dy = x2-x, y2-y
-            if abs(dx) < 1.2 and 0.1 < dy < 1.4 and re.fullmatch(r'\d{1,2}', t2) and h2 >= 0.15:
+            if abs(dx) < 0.9 and 0.12 < dy < 0.75+0.35*min(nl, 2) and re.fullmatch(r'\d{1,2}', t2) and h2 >= 0.15:
                 if num is None or dy < num[0]: num = (dy, t2)
         etiquetas.append([x, y, nombre_lindo(nom), num[1] if num else None])
-    # quitar duplicados (textos repetidos en el mismo sitio)
     uniq = []
     for e in etiquetas:
         if not any(abs(e[0]-u[0]) < 0.6 and abs(e[1]-u[1]) < 0.6 for u in uniq): uniq.append(e)
     etiquetas = uniq
+
+    # 1) Locales con etiqueta: desde el texto se buscan los cuatro muros que lo rodean
+    #    (resistente a puertas abiertas) y se toma la forma real dentro de ese rectángulo.
+    M = lambda m: int(round(m/RES))
+    def ajustar(sx, sy):
+        if not (5 < sx < iw-5 and 5 < sy < ih-5): return None
+        if img[sy, sx]:
+            v = np.argwhere(img[sy-12:sy+13, sx-12:sx+13] == 0)
+            if not len(v): return None
+            k = np.argmin(np.abs(v-12).sum(1)); sy, sx = sy-12+int(v[k][0]), sx-12+int(v[k][1])
+        tope = M(45)
+        def rayo(dx, dy):
+            ds = []
+            for o in range(-M(0.8), M(0.8)+1, 3):
+                x, y = sx+(o if dy else 0), sy+(o if dx else 0); n = 0
+                while 0 < x < iw-1 and 0 < y < ih-1 and not img[y, x] and n < tope: x += dx; y += dy; n += 1
+                ds.append(n)
+            return int(np.median(ds))
+        iz, de, ar, ab_ = rayo(-1, 0), rayo(1, 0), rayo(0, -1), rayo(0, 1)
+        if max(iz, de, ar, ab_) >= tope: return None
+        x0, x1, y0, y1 = sx-iz, sx+de, sy-ar, sy+ab_
+        mg, COB, ini = M(0.25), 0.42, M(0.35)
+        for _ in range(4):        # se afina cada lado mirando el ancho completo del local
+            def lado(fijo0, fijo1, desde, hasta, paso, horiz):
+                a0, a1 = fijo0+mg, fijo1-mg
+                if a1-a0 < 5: return None
+                p = desde
+                while (p < hasta) if paso > 0 else (p > hasta):
+                    if not (1 < p < (iw if horiz else ih)-3): return None
+                    t = img[a0:a1, p:p+3].any(1) if horiz else img[p:p+3, a0:a1].any(0)
+                    if t.mean() >= COB: return p
+                    p += paso
+                return None
+            nx1 = lado(y0, y1, sx+ini, x1+M(2.5), 1, True); nx0 = lado(y0, y1, sx-ini, x0-M(2.5), -1, True)
+            ny1 = lado(x0, x1, sy+ini, y1+M(2.5), 1, False); ny0 = lado(x0, x1, sy-ini, y0-M(2.5), -1, False)
+            x0, x1, y0, y1 = nx0 if nx0 is not None else x0, nx1 if nx1 is not None else x1, ny0 if ny0 is not None else y0, ny1 if ny1 is not None else y1
+        if x0 < 2 or y0 < 2 or x1 > iw-4 or y1 > ih-4 or x1-x0 < M(1.0) or y1-y0 < M(1.0): return None
+        # los cuatro lados tienen que ser muro de verdad; si no, es un exterior o una etiqueta suelta
+        a0, a1, b0, b1 = y0+mg, y1-mg, x0+mg, x1-mg
+        if a1-a0 < 5 or b1-b0 < 5: return None
+        cob = [img[a0:a1, x0-1:x0+3].any(1).mean(), img[a0:a1, x1-1:x1+3].any(1).mean(), img[y0-1:y0+3, b0:b1].any(0).mean(), img[y1-1:y1+3, b0:b1].any(0).mean()]
+        if min(cob) < 0.33: return None
+        x0, y0 = x0+1, y0+1
+        sub = (img[y0:y1, x0:x1] == 0).astype(np.uint8)
+        if not sub[sy-y0, sx-x0]: return None
+        n, lab = cv2.connectedComponents(sub, connectivity=4)
+        reg = (lab == lab[sy-y0, sx-x0]).astype(np.uint8)
+        reg = cv2.morphologyEx(reg, cv2.MORPH_OPEN, np.ones((9, 9), np.uint8))
+        reg = cv2.dilate(reg, np.ones((3, 3), np.uint8))
+        return x0, y0, reg
+    def contorno(x0, y0, reg):
+        cs, _ = cv2.findContours(reg, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if not cs: return None
+        c = max(cs, key=cv2.contourArea)
+        c = cv2.approxPolyDP(c, 2.5, True).reshape(-1, 2)
+        if len(c) < 3: return None
+        return [[cm((p[0]+x0)*RES), cm((p[1]+y0)*RES)] for p in c]
+
+    duenio = np.zeros((ih, iw), np.int32)
     locales = []
     usados = {}
+    prioridad = lambda e: (e[2].startswith('SS.HH'), e[3] is None)
+    for e in sorted(etiquetas, key=prioridad):
+        r = ajustar(int(e[0]/RES), int(e[1]/RES))
+        if not r: continue
+        x0, y0, reg = r
+        area = float(reg.sum())*RES*RES
+        if area < 2.5 or area > 450 or area < 0.55*reg.shape[0]*reg.shape[1]*RES*RES: continue
+        zona = duenio[y0:y0+reg.shape[0], x0:x0+reg.shape[1]]
+        if ((zona > 0) & (reg > 0)).sum() > 0.4*reg.sum(): continue        # ya detectado con otra etiqueta
+        poly = contorno(x0, y0, reg)
+        if not poly: continue
+        zona[(reg > 0) & (zona == 0)] = len(locales)+1
+        usados[id(e)] = 1
+        mo = cv2.moments(reg)
+        locales.append({'nombre': e[2]+(' '+e[3] if e[3] else ''), 'area': round(area, 1), 'poly': poly,
+                        'cx': cm((x0+mo['m10']/mo['m00'])*RES), 'cy': cm((y0+mo['m01']/mo['m00'])*RES)})
+
+    # 2) Espacios sin etiqueta: zonas encerradas que no pertenecen a ningún local anterior.
+    g = M(2.1)
+    cerr = img | cv2.morphologyEx(img, cv2.MORPH_CLOSE, np.ones((1, g), np.uint8)) | cv2.morphologyEx(img, cv2.MORPH_CLOSE, np.ones((g, 1), np.uint8))
+    libre = cv2.erode(255-cerr, np.ones((3, 3), np.uint8))
+    n, lab, stats, cent = cv2.connectedComponentsWithStats(libre, connectivity=4)
     for i in range(1, n):
         area = stats[i, cv2.CC_STAT_AREA]*RES*RES
         x, y, w, h = stats[i, :4]
-        if area < 5.0 or area > 1500: continue
-        if x <= 1 or y <= 1 or x+w >= iw-1 or y+h >= ih-1: continue
-        mask = (lab[y:y+h, x:x+w] == i).astype(np.uint8)
-        mask = cv2.dilate(mask, np.ones((5, 5), np.uint8))
-        cs, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        c = max(cs, key=cv2.contourArea)
-        c = cv2.approxPolyDP(c, 3.0, True).reshape(-1, 2)
-        if len(c) < 3: continue
-        poly = [[cm((p[0]+x)*RES), cm((p[1]+y)*RES)] for p in c]
-        dentro_e = [e for e in etiquetas if 0 <= int(e[0]/RES)-x < w and 0 <= int(e[1]/RES)-y < h and lab[int(e[1]/RES), int(e[0]/RES)] == i]
-        if not dentro_e:  # etiqueta cayendo sobre una línea: probar alrededores
-            for e in etiquetas:
-                ex, ey = int(e[0]/RES), int(e[1]/RES)
-                if x <= ex < x+w and y <= ey < y+h:
-                    win = lab[max(0, ey-8):ey+9, max(0, ex-8):ex+9]
-                    if (win == i).sum() > 60 and id(e) not in usados: dentro_e.append(e)
-        for e in dentro_e: usados[id(e)] = 1
-        nom = None
-        if dentro_e:
-            e = dentro_e[0]; nom = e[2]+(' '+e[3] if e[3] else '')
-        per = cv2.arcLength(c, True)*RES
-        if not dentro_e and (area < 12 or 4*math.pi*area/(per*per) < 0.3): continue
-        locales.append({'nombre': nom, 'area': round(float(area), 1), 'poly': poly, 'cx': cm(cent[i][0]*RES), 'cy': cm(cent[i][1]*RES)})
-    # sin nombre: solo los de tamaño razonable
+        if area < 12 or area > 1500 or x <= 1 or y <= 1 or x+w >= iw-1 or y+h >= ih-1: continue
+        reg = (lab[y:y+h, x:x+w] == i).astype(np.uint8)
+        if ((duenio[y:y+h, x:x+w] > 0) & (reg > 0)).sum() > 0.3*reg.sum(): continue
+        reg = cv2.dilate(reg, np.ones((5, 5), np.uint8))
+        cs, _ = cv2.findContours(reg, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        per = cv2.arcLength(max(cs, key=cv2.contourArea), True)*RES
+        if 4*math.pi*area/(per*per) < 0.3: continue
+        poly = contorno(x, y, reg)
+        if poly: locales.append({'nombre': None, 'area': round(float(area), 1), 'poly': poly, 'cx': cm(cent[i][0]*RES), 'cy': cm(cent[i][1]*RES)})
+
+    # nombres repetidos: se distinguen con una letra
+    cuenta = {}
+    for l in locales:
+        if l['nombre']: cuenta[l['nombre']] = cuenta.get(l['nombre'], 0)+1
+    visto = {}
+    for l in sorted(locales, key=lambda l: (l['cy'], l['cx'])):
+        n = l['nombre']
+        if n and cuenta[n] > 1:
+            visto[n] = visto.get(n, 0)+1; l['nombre'] = f"{n} ({'abcdefghijklmnop'[visto[n]-1]})"
     locales.sort(key=lambda l: (l['nombre'] is None, l['nombre'] or '', l['cy'], l['cx']))
     k = 0
     for j, l in enumerate(locales):
@@ -257,7 +336,7 @@ for nid, nombre, (ax, ay, bx, by) in NIVELES:
     S['m'] = [s for s in S['m'] if largo(s) <= 45]
     data = {
         'id': nid, 'nombre': nombre, 'ancho': cm(W), 'alto': cm(H),
-        'muros': pack(S['m']), 'aberturas': pack(S['a']), 'detalle': pack(S['d'], 0.12),
+        'muros': pack(S['m']), 'aberturas': pack(S['a']), 'barreras': pack(barreras), 'detalle': pack(S['d'], 0.12),
         'etiquetas': [{'x': cm(e[0]), 'y': cm(e[1]), 't': e[2]+(' '+e[3] if e[3] else '')} for e in etiquetas],
         'locales': locales,
     }

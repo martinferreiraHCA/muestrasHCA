@@ -64,6 +64,10 @@ function mallaItem(it) {
       for (const sx of [-1, 1]) g.add(caja(0.05, h, l, sx * (w / 2 - 0.025), h / 2, -d / 2 + l / 2, claro));
       g.add(caja(w, 0.3, 0.07, 0, h - 0.15, -d / 2 + 0.035, m)); break;
     }
+    case 'persona': {
+      const c = new THREE.Mesh(new THREE.CylinderGeometry(w * 0.32, w * 0.4, h * 0.82, 16), m); c.position.y = h * 0.41; g.add(c);
+      const k = new THREE.Mesh(new THREE.SphereGeometry(w * 0.26, 16, 12), mat(0xf1c9a5)); k.position.y = h * 0.92; g.add(k); break;
+    }
     case 'zona': g.add(caja(w, 0.02, d, 0, 0.012, 0, mat(it.color, { transparent: true, opacity: 0.35 }))); break;
     case 'texto': break;
     default: g.add(caja(w, h, d, 0, h / 2, 0, m));

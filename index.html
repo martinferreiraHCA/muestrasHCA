@@ -21,6 +21,7 @@
   <div class="tabs" role="tablist">
     <button id="tabPlano" class="activo" role="tab">Planta</button>
     <button id="tabIso" role="tab">Isométrica</button>
+    <button id="tabSim" role="tab">Circulación</button>
   </div>
   <div class="flex1"></div>
   <button id="btnDeshacer" title="Deshacer (Ctrl+Z)">↶</button>
@@ -77,6 +78,18 @@
       </label>
       <label><input type="checkbox" id="chkEtiquetas3d" checked> Nombres</label>
       <button id="btnPNG">Descargar imagen</button>
+    </div>
+    <div class="herramientas oculto" id="herramientasSim">
+      <button id="btnSimPlay" class="activo" title="Iniciar o pausar la simulación">▶ Simular</button>
+      <button id="btnSimReset" title="Volver a empezar">Reiniciar</button>
+      <label>Velocidad
+        <select id="selSimVel"><option value="1">×1</option><option value="4" selected>×4</option><option value="16">×16</option><option value="60">×60</option></select>
+      </label>
+      <label>Mapa
+        <select id="selSimMapa"><option value="transito">Tránsito</option><option value="aglomeracion">Aglomeración</option><option value="ninguno">Sin mapa</option></select>
+      </label>
+      <button id="btnSimComparar" title="Corre la simulación completa con recorrido libre y guiado y compara">Comparar recorridos</button>
+      <button id="btnEncuadrar2">Encuadrar</button>
     </div>
     <canvas id="plano" tabindex="0"></canvas>
     <div id="iso" class="oculto"></div>

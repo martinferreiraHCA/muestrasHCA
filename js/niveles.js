@@ -26,7 +26,7 @@ export async function cargarNivel(info) {
   const d = await r.json();
   const n = {
     id: d.id, nombre: d.nombre, ancho: d.ancho / 100, alto: d.alto / 100,
-    muros: aMetros(d.muros), aberturas: aMetros(d.aberturas), detalle: aMetros(d.detalle),
+    muros: aMetros(d.muros), aberturas: aMetros(d.aberturas), barreras: aMetros(d.barreras || []), detalle: aMetros(d.detalle),
     locales: d.locales.map(l => ({
       id: l.id, nombre: l.nombre, auto: !!l.auto, area: l.area,
       poly: l.poly.map(p => [p[0] / 100, p[1] / 100]),
@@ -80,7 +80,7 @@ export function aLocal(it, x, y) {
   const a = -it.rot * Math.PI / 180, c = Math.cos(a), s = Math.sin(a), dx = x - it.x, dy = y - it.y;
   return [dx * c - dy * s, dx * s + dy * c];
 }
-export const esRedondo = it => it.modelo === 'mesa-redonda' || it.modelo === 'cilindro';
+export const esRedondo = it => it.modelo === 'mesa-redonda' || it.modelo === 'cilindro' || it.modelo === 'persona';
 
 /** Rectángulo de trabajo: espacios elegidos + elementos del nivel; si no hay nada, el nivel entero. */
 export function areaTrabajo(nivel, proy, margen = 1.5) {

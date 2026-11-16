@@ -4,6 +4,7 @@ import { espaciosDe, puntoEnPoly, esquinas, aLocal, esRedondo, areaTrabajo, ajus
 
 export const ui = {
   herramienta: 'mover', seleccion: new Set(), iman: true, detalle: true,
+  capa: null, ocultar: null,           // extras que dibuja la simulación de circulación
   nivel: null, alSeleccionar: () => {}, pedirNombre: async () => null, pista: () => {},
 };
 
@@ -19,6 +20,13 @@ const punteros = new Map();
 const ACENTO = '#1f4e9c';
 const aMundo = (px, py) => [vista.x + px / vista.k, vista.y + py / vista.k];
 const iman = v => ui.iman ? Math.round(v / 0.05) * 0.05 : v;
+/** Para dibujar y medir: se pega a la esquina de muro más cercana (a menos de 10 px); si no, a la grilla. */
+function imanPunto(x, y) {
+  if (!ui.iman) return [x, y];
+  const S = ui.nivel.muros; let m = (10 / vista.k) ** 2, r = null;
+  for (let i = 0; i < S.length; i += 2) { const d = (S[i] - x) ** 2 + (S[i + 1] - y) ** 2; if (d < m) { m = d; r = [S[i], S[i + 1]]; } }
+  return r || [iman(x), iman(y)];
+}
 const itemsNivel = () => proyecto().items.filter(i => i.nivel === ui.nivel.id);
 const seleccionados = () => itemsNivel().filter(i => ui.seleccion.has(i.id));
 
@@ -52,7 +60,7 @@ export function fijarHerramienta(h) {
   canvas.style.cursor = h === 'mover' ? 'default' : 'crosshair';
   ui.pista({
     mover: '', espacios: 'Tocá un salón para elegirlo o quitarlo.',
-    dibujar: 'Tocá para marcar cada esquina. Doble clic o Enter para cerrar el espacio. Esc cancela.',
+    dibujar: 'Tocá para marcar cada esquina (se pega a las esquinas de los muros). Doble clic o Enter para cerrar el espacio. Esc cancela.',
     medir: 'Tocá dos puntos para medir la distancia.',
   }[h]);
   pedir();
@@ -145,7 +153,8 @@ function dibujar() {
   }
 
   const its = itemsNivel();
-  for (const it of its) dibujarItem(ctx, it, k, ui.seleccion.has(it.id));
+  for (const it of its) if (!ui.ocultar?.(it)) dibujarItem(ctx, it, k, ui.seleccion.has(it.id));
+  ui.capa?.(ctx, k);
 
   // tirador de giro
   const sel = seleccionados();
@@ -263,7 +272,7 @@ function alMover(e) {
   }
   if (!accion) {
     if (ui.herramienta === 'espacios') { const h = espacioEn(x, y); if (h?.id !== hover?.id) { hover = h; pedir(); } }
-    if (ui.herramienta === 'dibujar' || ui.herramienta === 'medir') { cursor = [iman(x), iman(y)]; pedir(); }
+    if (ui.herramienta === 'dibujar' || ui.herramienta === 'medir') { cursor = imanPunto(x, y); pedir(); }
     if (ui.herramienta === 'mover') canvas.style.cursor = itemEn(x, y) ? 'move' : 'default';
     return;
   }
@@ -302,11 +311,11 @@ function alSoltar(e) {
     const esp = espacioEn(a.x, a.y);
     if (esp) { marcar(); const p = proyecto(); p.espacios = p.espacios.includes(esp.id) ? p.espacios.filter(i => i !== esp.id) : [...p.espacios, esp.id]; avisar('espacios'); }
   } else if (h === 'dibujar') {
-    const q = [iman(a.x), iman(a.y)];
+    const q = imanPunto(a.x, a.y);
     if (trazo.length >= 3 && Math.hypot(q[0] - trazo[0][0], q[1] - trazo[0][1]) < 10 / vista.k) cerrarTrazo();
     else { trazo.push(q); pedir(); }
   } else if (h === 'medir') {
-    const q = [iman(a.x), iman(a.y)];
+    const q = imanPunto(a.x, a.y);
     medida = medida.length === 1 ? [medida[0], q] : [q];
     if (medida.length === 2) ui.pista('Distancia: ' + Math.hypot(q[0] - medida[0][0], q[1] - medida[0][1]).toFixed(2).replace('.', ',') + ' m');
     pedir();
@@ -356,4 +365,6 @@ export function agregar(tipo, x, y) {
   if (ui.herramienta !== 'mover') ui.alHerramienta?.('mover');
   avisar('items'); ui.alSeleccionar();
 }
+/** Imagen del plano tal como se ve (para el PDF). */
+export function imagen() { if (!canvas.width) return null; dibujar(); return { url: canvas.toDataURL('image/jpeg', 0.92), w: canvas.width, h: canvas.height }; }
 export { seleccionados, itemsNivel };

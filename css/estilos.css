@@ -109,3 +109,9 @@ dialog .menu button { text-align: left; padding: 8px 10px; }
   main { flex-direction: column; }
   .panel.izq { width: 100%; max-height: 34vh; border-right: 0; border-bottom: 1px solid var(--borde); }
 }
+
+.alerta { color: var(--peligro); }
+.resumen small { color: var(--suave); }
+.resumen.comp td { text-align: right; }
+.resumen.comp td:first-child { text-align: left; }
+.resumen.comp tr:first-child td { font-weight: 600; color: var(--suave); font-size: 12px; }

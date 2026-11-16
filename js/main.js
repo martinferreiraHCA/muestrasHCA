@@ -5,12 +5,13 @@ import { cargarIndice, cargarNivel, espaciosDe, espaciosElegidos } from './nivel
 import * as P from './plano.js';
 import { ui } from './plano.js';
 import { generarPDF } from './pdf.js';
+import { Simulacion, SIM_DEF, DT, esParada, esEntrada, esSalida } from './sim.js';
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const num = (v, min, max, def) => { const n = parseFloat(String(v).replace(',', '.')); return isFinite(n) ? Math.max(min, Math.min(max, n)) : def; };
 
-let indice = [], nivel = null, iso = null, vistaIso = false, portapapeles = [], editandoPanel = false;
+let indice = [], nivel = null, iso = null, vistaIso = false, vistaSim = false, portapapeles = [], editandoPanel = false;
 
 // ---------- utilidades de interfaz ----------
 let tAviso;
@@ -64,16 +65,126 @@ async function asegurarIso() {
   if (!iso) { iso = await import('./iso.js'); iso.iniciarIso($('iso')); }
   return iso;
 }
-async function verIso(si) {
-  vistaIso = si;
-  $('tabPlano').classList.toggle('activo', !si); $('tabIso').classList.toggle('activo', si);
-  $('plano').classList.toggle('oculto', si); $('iso').classList.toggle('oculto', !si);
-  $('herramientas').classList.toggle('oculto', si); $('herramientasIso').classList.toggle('oculto', !si);
-  if (si) {
-    try { await asegurarIso(); } catch (e) { aviso('No se pudo iniciar la vista 3D en este navegador.'); return verIso(false); }
+async function ver(v) {
+  vistaIso = v === 'iso'; vistaSim = v === 'sim';
+  $('tabPlano').classList.toggle('activo', v === 'plano'); $('tabIso').classList.toggle('activo', vistaIso); $('tabSim').classList.toggle('activo', vistaSim);
+  $('plano').classList.toggle('oculto', vistaIso); $('iso').classList.toggle('oculto', !vistaIso);
+  $('herramientas').classList.toggle('oculto', v !== 'plano'); $('herramientasIso').classList.toggle('oculto', !vistaIso); $('herramientasSim').classList.toggle('oculto', !vistaSim);
+  if (!vistaSim) simPausar();
+  ui.capa = vistaSim ? (ctx, k) => sim?.dibujar(ctx, k, $('selSimMapa').value) : null;
+  ui.ocultar = vistaSim ? it => it.modelo === 'persona' && sim && sim.t > 0 : null;
+  ui.pista('');
+  if (vistaIso) {
+    try { await asegurarIso(); } catch (e) { aviso('No se pudo iniciar la vista 3D en este navegador.'); return ver('plano'); }
     iso.actualizarIso(nivel, proyecto(), opIso()); iso.mostrarIso(true);
     ui.pista('Arrastrá para orbitar · rueda para acercar · botón derecho para desplazar');
-  } else { iso?.mostrarIso(false); ui.pista(''); P.pedir(); }
+  } else {
+    iso?.mostrarIso(false);
+    if (vistaSim) { ui.alHerramienta('mover'); ui.seleccion.clear(); if (!sim) simCrear(); }
+    pintarPanel(); P.pedir();
+  }
+}
+const verIso = si => ver(si ? 'iso' : 'plano');
+
+// ---------- simulación de circulación ----------
+let sim = null, simCorre = false, simRaf = 0, simPrevio = 0, simComp = null, tPanelSim = 0;
+const parSim = () => ({ ...SIM_DEF, ...(proyecto().sim || {}) });
+function simCrear() {
+  simPausar(); sim = nivel ? new Simulacion(nivel, proyecto(), parSim()) : null; simComp = null;
+  if (vistaSim) { pintarPanel(); P.pedir(); }
+}
+function simPausar() { simCorre = false; cancelAnimationFrame(simRaf); const b = $('btnSimPlay'); if (b) b.textContent = '▶ Simular'; }
+function simAlternar() {
+  if (simCorre) return simPausar();
+  if (!sim || sim.terminada) simCrear();
+  if (sim.falta) { aviso(sim.falta); return; }
+  simCorre = true; simPrevio = performance.now(); $('btnSimPlay').textContent = '⏸ Pausa';
+  const cuadro = ahora => {
+    if (!simCorre) return;
+    const vel = +$('selSimVel').value, pasos = Math.min(400, Math.max(1, Math.round(Math.min(0.1, (ahora - simPrevio) / 1000) * vel / DT)));
+    simPrevio = ahora;
+    for (let i = 0; i < pasos && !sim.terminada; i++) sim.paso();
+    P.pedir();
+    if (ahora - tPanelSim > 400) { tPanelSim = ahora; pintarEstadoSim(); }
+    if (sim.terminada) { simPausar(); pintarEstadoSim(); aviso('Simulación terminada.'); return; }
+    simRaf = requestAnimationFrame(cuadro);
+  };
+  simRaf = requestAnimationFrame(cuadro);
+}
+const mmss = t => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+const nivelDens = d => d < 1 ? 'cómoda' : d < 2 ? 'aceptable' : d < 3.5 ? 'apretada' : 'crítica';
+function pintarEstadoSim() {
+  const el = $('simEstado'); if (!el || !sim) return;
+  if (sim.falta) { el.innerHTML = `<p class="ayuda alerta">${esc(sim.falta)}</p>`; return; }
+  const r = sim.resumen();
+  el.innerHTML = `<table class="resumen">
+    <tr><td>Tiempo simulado</td><td>${mmss(r.t)}</td></tr>
+    <tr><td>Personas adentro</td><td>${r.adentro}</td></tr>
+    <tr><td>Ya salieron</td><td>${r.terminaron} de ${r.total}</td></tr>
+    <tr><td>Tiempo medio de visita</td><td>${r.terminaron ? mmss(r.tiempoProm) : '—'}</td></tr>
+    <tr><td>Densidad máxima</td><td>${r.densMax.toFixed(1).replace('.', ',')} pers./m² <small>(${nivelDens(r.densMax)})</small></td></tr>
+    <tr><td>Tiempo en aglomeración</td><td>${r.pctAglom.toFixed(1).replace('.', ',')} %</td></tr>
+  </table>
+  ${r.terminada && r.critico ? '<p class="ayuda">El círculo rojo punteado marca el punto más congestionado: conviene ensanchar ese paso o separar los puestos cercanos.</p>' : ''}
+  ${sim.paradas.length ? `<p class="ayuda" style="margin-top:8px">Visitas por parada: ${sim.paradas.map(p => `${esc(p.nombre)} <b>${p.visitas}</b>`).join(' · ')}</p>` : ''}`;
+}
+function pintarPanelSim() {
+  const p = parSim(), el = $('panelDer'), its = P.itemsNivel();
+  const nE = its.filter(esEntrada).length, nS = its.filter(esSalida).length, nP = its.filter(esParada).length, nG = its.filter(i => i.modelo === 'persona').length;
+  el.innerHTML = `
+    <section><h2>Circulación de gente</h2>
+      <p class="ayuda">Los visitantes entran por las <b>Entradas</b>, recorren las paradas (stands y mesas con nombre) y se van por la <b>Salida</b>. También podés poner <b>Personas</b> sueltas en el plano.</p>
+      <table class="resumen">
+        <tr><td>Entradas</td><td>${nE || '<b class="alerta">falta</b>'}</td></tr>
+        <tr><td>Salidas</td><td>${nS || 'por la entrada'}</td></tr>
+        <tr><td>Paradas del recorrido</td><td>${nP}</td></tr>
+        <tr><td>Personas puestas a mano</td><td>${nG}</td></tr>
+      </table>
+    </section>
+    <section><h2>Parámetros</h2>
+      <div class="fila2">
+        <label>Visitantes<input id="sVis" type="number" min="1" max="600" value="${p.visitantes}"></label>
+        <label>Entran por minuto<input id="sMin" type="number" min="1" max="300" value="${p.porMinuto}"></label>
+        <label>Segundos por parada<input id="sPer" type="number" min="0" max="900" value="${p.permanencia}"></label>
+        <label title="0 = visitan todas">Paradas por persona<input id="sPar" type="number" min="0" max="99" value="${p.paradas}"></label>
+      </div>
+      <label>Recorrido<select id="sModo">
+        <option value="libre" ${p.modo === 'libre' ? 'selected' : ''}>Libre: cada uno va al puesto más cercano y menos lleno</option>
+        <option value="guiado" ${p.modo === 'guiado' ? 'selected' : ''}>Guiado: sentido único, todos en el mismo orden</option>
+      </select></label>
+      <p class="ayuda">En «Paradas por persona», 0 significa que visitan todas.</p>
+    </section>
+    <section><h2>Resultado</h2><div id="simEstado"></div></section>
+    ${simComp ? `<section><h2>Comparación</h2>
+      <table class="resumen comp"><tr><td></td><td>Libre</td><td>Guiado</td></tr>
+        <tr><td>Duración total</td><td>${mmss(simComp.libre.t)}</td><td>${mmss(simComp.guiado.t)}</td></tr>
+        <tr><td>Visita media</td><td>${mmss(simComp.libre.tiempoProm)}</td><td>${mmss(simComp.guiado.tiempoProm)}</td></tr>
+        <tr><td>Densidad máx.</td><td>${simComp.libre.densMax.toFixed(1)}</td><td>${simComp.guiado.densMax.toFixed(1)}</td></tr>
+        <tr><td>En aglomeración</td><td>${simComp.libre.pctAglom.toFixed(1)} %</td><td>${simComp.guiado.pctAglom.toFixed(1)} %</td></tr>
+      </table><p class="ayuda" style="margin-top:8px">${esc(simComp.texto)}</p></section>` : ''}`;
+  const campo = (id, k, min, max) => { $(id).onchange = e => { proyecto().sim = { ...parSim(), [k]: k === 'modo' ? e.target.value : num(e.target.value, min, max, SIM_DEF[k]) }; avisar('sim'); }; };
+  campo('sVis', 'visitantes', 1, 600); campo('sMin', 'porMinuto', 1, 300); campo('sPer', 'permanencia', 0, 900); campo('sPar', 'paradas', 0, 99); campo('sModo', 'modo');
+  pintarEstadoSim();
+}
+async function simComparar() {
+  simPausar();
+  const base = new Simulacion(nivel, proyecto(), parSim());
+  if (base.falta) return aviso(base.falta);
+  if (base.paradas.length < 2) return aviso('Hacen falta al menos dos paradas (stands o mesas con nombre) para comparar recorridos.');
+  aviso('Calculando las dos alternativas…'); await new Promise(f => setTimeout(f, 40));
+  const libre = new Simulacion(nivel, proyecto(), { ...parSim(), modo: 'libre' }).completar();
+  const g = new Simulacion(nivel, proyecto(), { ...parSim(), modo: 'guiado' }); const guiado = g.completar();
+  const nota = r => r.pctAglom + r.densMax * 2;
+  const parejo = Math.abs(libre.pctAglom - guiado.pctAglom) < 2 && Math.abs(libre.densMax - guiado.densMax) < 0.5;
+  const mejor = parejo ? parSim().modo : nota(libre) <= nota(guiado) ? 'libre' : 'guiado';
+  const m = mejor === 'libre' ? libre : guiado, otro = mejor === 'libre' ? guiado : libre;
+  simComp = { libre, guiado, mejor, texto: parejo
+    ? 'Las dos formas de recorrer dan una circulación parecida con esta distribución. Para mejorarla, probá separar más los puestos o mover la entrada y la salida.'
+    : `Con esta distribución circula mejor el recorrido ${mejor}: ${m.pctAglom.toFixed(1)} % del tiempo en aglomeración contra ${otro.pctAglom.toFixed(1)} %. Se dejó elegido ese recorrido.` };
+  proyecto().sim = { ...parSim(), modo: mejor };
+  const comp = simComp; avisar('sim'); simComp = comp;
+  sim = new Simulacion(nivel, proyecto(), parSim()); sim.completar();
+  pintarPanel(); P.pedir();
 }
 
 // ---------- paneles ----------
@@ -111,9 +222,9 @@ function pintarCatalogo() {
 }
 
 function pintarPanel() {
-  if (editandoPanel) return;
+  if (editandoPanel || !nivel) return;
+  if (vistaSim) return pintarPanelSim();
   const sel = P.seleccionados(), el = $('panelDer');
-  if (!nivel) return;
   if (!sel.length) {
     const its = P.itemsNivel(), cuenta = new Map();
     its.forEach(i => cuenta.set(i.nombre, (cuenta.get(i.nombre) || 0) + 1));
@@ -146,6 +257,7 @@ function pintarPanel() {
         <label>Giro (°)<input id="pRot" type="number" step="5" value="${comun('rot')}"></label>
         <label>Color<input id="pColor" type="color" value="${comun('color') || '#888888'}"></label>
       </div>
+      <label class="check" title="Los visitantes de la simulación de circulación se detienen en las paradas"><input id="pParada" type="checkbox" ${sel.every(esParada) ? 'checked' : ''}> Es una parada del recorrido</label>
       <div class="botones">
         <button id="pDup">Duplicar</button><button id="pGirar">Girar 90°</button>
         <button id="pFrente" title="Dibujar por encima de los demás">Al frente</button>
@@ -183,6 +295,7 @@ function pintarPanel() {
   vivo('pH', v => { const n = num(v, 0, 8, null); if (n !== null) sel.forEach(i => { i.h = n; }); });
   vivo('pRot', v => { const n = num(v, -3600, 3600, null); if (n !== null) sel.forEach(i => { i.rot = ((n % 360) + 360) % 360; }); });
   vivo('pColor', v => sel.forEach(i => { i.color = v; }));
+  $('pParada').onchange = e => { marcar(); sel.forEach(i => { i.parada = e.target.checked; }); avisar('items'); };
   $('pDup').onclick = duplicar; $('pBorrar').onclick = borrar; $('pGirar').onclick = () => girarSel(90);
   $('pFrente').onclick = () => { marcar(); const p = proyecto(); p.items = [...p.items.filter(i => !ui.seleccion.has(i.id)), ...sel]; avisar('items'); };
   $('gCrear').onclick = () => grilla(num($('gCols').value, 1, 60, 1) | 0, num($('gFilas').value, 1, 60, 1) | 0, num($('gSx').value, 0, 20, 0), num($('gSy').value, 0, 20, 0));
@@ -263,6 +376,7 @@ async function exportarPDF() {
     <p class="ayuda">Se incluye una página por nivel con espacios o elementos: <b>${lista.map(n => esc(n.nombre)).join(', ')}</b>.</p>
     <label>Tamaño de hoja<select name="formato"><option value="a4">A4 apaisado</option><option value="a3">A3 apaisado</option></select></label>
     <label class="check"><input type="checkbox" name="iso" checked> Agregar vista isométrica</label>
+    ${sim && sim.t > 0 && !sim.falta && !$('plano').classList.contains('oculto') ? '<label class="check"><input type="checkbox" name="circ" checked> Agregar el mapa de circulación simulado</label>' : ''}
     <label class="check"><input type="checkbox" name="lista" checked> Agregar listado de elementos y nombres</label>
     <label class="check"><input type="checkbox" name="detalle" ${ui.detalle ? 'checked' : ''}> Mostrar el detalle del plano (mobiliario fijo, pavimentos)</label>
     ${pie('Descargar PDF')}`);
@@ -273,7 +387,17 @@ async function exportarPDF() {
     const niveles = []; for (const n of lista) niveles.push(await cargarNivel(n));
     let captura = null;
     if (r.iso) { try { await asegurarIso(); captura = (n, w, h) => { iso.actualizarIso(n, p, opIso()); return iso.capturar(w, h); }; } catch { /* sin WebGL: se omite */ } }
-    const doc = generarPDF(p, niveles, { formato: r.formato, iso: !!captura, lista: r.lista, detalle: r.detalle, capturaIso: captura });
+    let circ = null;
+    if (r.circ && sim) {
+      const antes = [ui.capa, ui.ocultar, new Set(ui.seleccion)];
+      ui.capa = (ctx, k) => sim.dibujar(ctx, k, $('selSimMapa').value === 'ninguno' ? 'transito' : $('selSimMapa').value); ui.seleccion.clear();
+      const img = P.imagen(); [ui.capa, ui.ocultar] = antes; antes[2].forEach(i => ui.seleccion.add(i)); P.pedir();
+      const s = sim.resumen(), q = parSim();
+      if (img) circ = { ...img, nivel: nivel.nombre, lineas: [
+        `${s.total} visitantes · ${q.porMinuto} por minuto · ${q.permanencia} s por parada · recorrido ${q.modo}`,
+        `Tiempo simulado ${mmss(s.t)} · visita media ${s.terminaron ? mmss(s.tiempoProm) : '—'} · densidad máxima ${s.densMax.toFixed(1).replace('.', ',')} pers./m² (${nivelDens(s.densMax)}) · ${s.pctAglom.toFixed(1).replace('.', ',')} % del tiempo en aglomeración`] };
+    }
+    const doc = generarPDF(p, niveles, { circ, formato: r.formato, iso: !!captura, lista: r.lista, detalle: r.detalle, capturaIso: captura });
     if (captura) { iso.actualizarIso(nivel, p, opIso()); if (vistaIso) iso.encuadrar(true); }
     doc.save(archivo(p.nombre) + '.pdf');
     aviso('PDF listo.');
@@ -308,11 +432,13 @@ async function menuProyecto() {
 
 // ---------- eventos ----------
 function conectar() {
-  $('selProyecto').onchange = async e => { E.abrirProyecto(e.target.value); await fijarNivel(proyecto().nivel); };
+  $('selProyecto').onchange = async e => { E.abrirProyecto(e.target.value); await fijarNivel(proyecto().nivel); if (vistaSim) simCrear(); };
   $('btnNuevo').onclick = async () => { const n = await pedirNombre('Nueva muestra', 'Muestra de …'); if (n) { E.crearProyecto(n); await fijarNivel(proyecto().nivel); } };
   $('btnMasProyecto').onclick = menuProyecto;
-  $('selNivel').onchange = async e => { proyecto().nivel = e.target.value; avisar('nivel'); await fijarNivel(e.target.value); if (vistaIso) verIso(true); };
-  $('tabPlano').onclick = () => verIso(false); $('tabIso').onclick = () => verIso(true);
+  $('selNivel').onchange = async e => { proyecto().nivel = e.target.value; avisar('nivel'); await fijarNivel(e.target.value); simCrear(); if (vistaIso) verIso(true); };
+  $('tabPlano').onclick = () => ver('plano'); $('tabIso').onclick = () => ver('iso'); $('tabSim').onclick = () => ver('sim');
+  $('btnSimPlay').onclick = simAlternar; $('btnSimReset').onclick = () => { simCrear(); };
+  $('selSimMapa').onchange = () => P.pedir(); $('btnSimComparar').onclick = simComparar; $('btnEncuadrar2').onclick = P.encuadrar;
   $('btnDeshacer').onclick = () => E.deshacer(); $('btnRehacer').onclick = () => E.rehacer();
   $('btnPDF').onclick = exportarPDF;
   $('inNombre').oninput = e => { proyecto().nombre = e.target.value; avisar('nombre'); };
@@ -337,11 +463,11 @@ function conectar() {
     avisar('espacios');
   };
 
-  $('catalogo').onclick = e => {
+  $('catalogo').onclick = async e => {
     const b = e.target.closest('.tipo'); if (!b) return;
     const t = E.catalogo().find(c => c.id === b.dataset.id);
     if (e.target.dataset.a === 'editar') return editarTipo(t);
-    if (vistaIso) verIso(false);
+    if (vistaIso) await ver('plano');
     P.agregar(t);
   };
   $('catalogo').addEventListener('dragstart', e => { const b = e.target.closest('.tipo'); if (b) e.dataTransfer.setData('text/plain', b.dataset.id); });
@@ -399,6 +525,7 @@ async function arrancar() {
     const ids = new Set(proyecto().items.map(i => i.id));
     [...ui.seleccion].forEach(id => { if (!ids.has(id)) ui.seleccion.delete(id); });
     pintarBarra();
+    if (que !== 'nombre' && sim) { sim = null; simComp = null; simPausar(); if (vistaSim) simCrear(); }
     if (que !== 'items' && que !== 'nombre') pintarEspacios();
     if (que === 'catalogo' || que === 'todo') pintarCatalogo();
     if (que !== 'nombre') pintarPanel();

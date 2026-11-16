@@ -142,6 +142,17 @@ export function generarPDF(proy, niveles, op) {
     }
   }
 
+  if (op.circ) {
+    pagina(); encabezado(`${op.circ.nivel}  ·  Circulación de gente (simulación)`);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(60, 68, 82);
+    op.circ.lineas.forEach((l, i) => doc.text(l, M, M + 21 + i * 4.5));
+    const y0 = M + 21 + op.circ.lineas.length * 4.5 + 1, h = PH - y0 - M - 4, w = PW - 2 * M, ar = op.circ.w / op.circ.h;
+    const iw = Math.min(w, h * ar), ih = iw / ar;
+    doc.addImage(op.circ.url, 'JPEG', M + (w - iw) / 2, y0, iw, ih, undefined, 'FAST');
+    doc.setFontSize(7.5); doc.setTextColor(102, 112, 133);
+    doc.text('Colores: zonas más transitadas o con aglomeración. Línea punteada y números: recorrido guiado sugerido. Círculo rojo: punto más congestionado.', M, PH - M - 0.5);
+  }
+
   if (op.lista !== false) listado(doc, proy, niveles, filas, { PW, PH, M, pagina, encabezado });
 
   const n = doc.getNumberOfPages();

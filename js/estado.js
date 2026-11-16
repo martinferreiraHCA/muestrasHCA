@@ -14,7 +14,11 @@ export const CATALOGO_BASE = [
   { id: 'tarima', nombre: 'Tarima', modelo: 'caja', w: 4.0, d: 3.0, h: 0.4, color: '#8d7b68' },
   { id: 'pantalla', nombre: 'Pantalla / TV', modelo: 'panel', w: 1.4, d: 0.1, h: 1.9, color: '#2b2f36' },
   { id: 'zona', nombre: 'Zona marcada', modelo: 'zona', w: 3.0, d: 3.0, h: 0, color: '#3aa76d' },
-  { id: 'cartel', nombre: 'Texto / cartel', modelo: 'texto', w: 2.0, d: 0.5, h: 0, color: '#1c2430' },
+  { id: 'cartel', nombre: 'Texto / cartel', modelo: 'texto', w: 2.0, d: 0.5, h: 0, color: '#1c2430', etiqueta: 'Texto' },
+  // para simular la circulación de gente
+  { id: 'entrada', nombre: 'Entrada', modelo: 'zona', w: 1.6, d: 1.0, h: 0, color: '#1a9c4b', etiqueta: 'Entrada' },
+  { id: 'salida', nombre: 'Salida', modelo: 'zona', w: 1.6, d: 1.0, h: 0, color: '#c0392b', etiqueta: 'Salida' },
+  { id: 'persona', nombre: 'Persona', modelo: 'persona', w: 0.5, d: 0.5, h: 1.7, color: '#f08c00' },
 ];
 
 export const MODELOS = {
@@ -31,6 +35,7 @@ function proyectoNuevo(nombre = 'Muestra sin nombre') {
     espacios: [],          // ids de espacios elegidos (de cualquier nivel)
     propios: [],           // espacios dibujados: {id, nivel, nombre, poly:[[x,y]…] en metros}
     renombres: {},         // id de espacio -> nombre puesto por el usuario
+    sim: {},               // parámetros de la simulación de circulación
     items: [],             // {id, nivel, tipo, nombre, modelo, x, y, rot, w, d, h, color, etiqueta}
   };
 }
@@ -107,5 +112,5 @@ export function exportarProyecto() {
 
 export function itemDesdeTipo(tipo, x, y, nivel) {
   return { id: uid(), nivel, tipo: tipo.id, nombre: tipo.nombre, modelo: tipo.modelo, x, y, rot: 0,
-    w: tipo.w, d: tipo.d, h: tipo.h, color: tipo.color, etiqueta: tipo.modelo === 'texto' ? 'Texto' : '' };
+    w: tipo.w, d: tipo.d, h: tipo.h, color: tipo.color, etiqueta: tipo.etiqueta || '' };
 }

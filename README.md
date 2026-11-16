@@ -15,8 +15,12 @@ las ubicaciones.
   forma y color.
 - **Isométrica**: vista 3D con los muros levantados a la altura indicada (3 m por defecto),
   completos, bajos u ocultos. Se puede girar y descargar como imagen.
-- **PDF**: una página por nivel con la planta a escala, la vista isométrica y el listado de
-  elementos y nombres.
+- **Circulación**: simulación de gente. Se marcan una Entrada y una Salida, los visitantes
+  recorren las paradas (stands y mesas con nombre) y se ve en vivo por dónde pasan, dónde se
+  aglomeran y cuánto tardan. Compara el recorrido libre con uno guiado de sentido único y
+  dibuja el orden sugerido. También se pueden poner personas a mano.
+- **PDF**: una página por nivel con la planta a escala, la vista isométrica, el mapa de
+  circulación simulado y el listado de elementos y nombres.
 - Las muestras se guardan solas en el navegador y se pueden exportar/importar como archivo.
 
 ## Cómo usarla
@@ -51,3 +55,18 @@ python3 convertir_plano.py ents.ndjson blocks.json ../data
 
 `convertir_plano.py` tiene al principio los recortes de cada nivel dentro de la lámina y los
 nombres de las capas de muros y aberturas; si cambia el plano hay que ajustarlos ahí.
+
+## Cómo se detectan los salones
+
+`convertir_plano.py` arma una imagen de barreras (muros, ventanas y cierre de puertas) y, por
+cada etiqueta de local del plano («AULA 24», «LABORATORIO 16»…), busca los cuatro muros que
+la rodean mirando el ancho completo del local, así una puerta abierta no lo deja escapar.
+Los locales sin etiqueta se completan con las zonas encerradas restantes. Lo que no salga
+bien se corrige en la app con «Dibujar espacio», que se pega a las esquinas de los muros.
+
+## Cómo funciona la simulación
+
+Grilla de 20 cm con los muros, ventanas y muebles como obstáculos; campos de distancia
+(Dijkstra) hacia cada parada y hacia la salida; separación entre personas y velocidad que
+baja con la densidad. Es una aproximación para comparar distribuciones, no un estudio de
+evacuación.
