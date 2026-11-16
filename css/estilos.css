@@ -129,3 +129,6 @@ dialog .menu button { text-align: left; padding: 8px 10px; }
 .tablasol tr.muestra td { background: #fff8e1; font-weight: 600; }
 .barrita { display: inline-block; width: 34px; height: 7px; background: #dfe3ea; border-radius: 4px; overflow: hidden; vertical-align: middle; margin-right: 4px; }
 .barrita i { display: block; height: 100%; background: #f59f00; }
+
+#folleto { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 64px 24px 24px; background: #e9ebef; }
+#folleto svg { max-width: 100%; max-height: 100%; width: auto; height: auto; box-shadow: 0 10px 40px rgba(20,28,40,.22); border-radius: 6px; background: #fff; }

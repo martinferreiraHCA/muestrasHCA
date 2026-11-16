@@ -31,6 +31,10 @@ las ubicaciones.
   edificios (según la cantidad de pisos) y de los elementos altos, cuánto sol recibe cada
   espacio al aire libre hora por hora, y lo mismo en la vista isométrica. Usa la ubicación de
   Montevideo y el norte del plano (se puede corregir). No considera árboles ni vecinos.
+- **Folleto**: genera un mapa ilustrado «Cómo llegar» con el caminito desde el punto de partida
+  (por defecto el portón del colegio) hasta la muestra, rodeando árboles y pasando por las
+  puertas. Sale en SVG vectorial, con capas con nombre y textos editables, y en PNG. Tiene
+  cuatro estilos de color, tres formatos y encuadre al recorrido o a todo el colegio.
 - **PDF**: una página por nivel con la planta a escala, la vista isométrica, los mapas de
   circulación y de sol y sombras, y el listado de elementos y nombres.
 - Las muestras se guardan solas en el navegador y se pueden exportar/importar como archivo.

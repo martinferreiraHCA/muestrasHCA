@@ -33,6 +33,7 @@ X0, Y0, X1, Y1 = 1095, 80, 1505, 165
 
 blocks = json.load(open(BLK))
 segs = {'m': [], 'a': [], 'd': []}   # (x1,y1,x2,y2)
+arbol_pts = []                        # puntos de dibujo de árboles (capa 0 suelta y bloques 'arbol')
 puertas = []                          # (cx,cy,r,a0,a1) arcos de puertas
 textos = []                           # (x,y,h,texto)
 
@@ -70,7 +71,7 @@ def limpio(t):
     t = t.replace('\\P', ' ').replace('%%%', '%').replace('{', '').replace('}', '')
     return re.sub(r'\s+', ' ', t).strip()
 
-def emit(e, T, layer, depth=0):
+def emit(e, T, layer, depth=0, arbol=False):
     t = e['type']; L = e['layer'] if e['layer'] != '0' or layer is None else layer
     mx = -1 if e.get('ez') == -1 else 1
     if t == 'INSERT':
@@ -83,7 +84,7 @@ def emit(e, T, layer, depth=0):
         bp = b.get('base') or {'x': 0, 'y': 0}
         M = mul(M, (1, 0, -bp['x'], 0, 1, -bp['y']))
         TT = mul(T, M)
-        for c2 in b['entities']: emit(c2, TT, L, depth+1)
+        for c2 in b['entities']: emit(c2, TT, L, depth+1, arbol or 'arbol' in e['name'].lower())
         return
     if t in ('TEXT', 'MTEXT'):
         if L not in TEXTOS: return
@@ -131,6 +132,8 @@ def emit(e, T, layer, depth=0):
     if not pts or len(pts) < 2: return
     pts = [ap(T, *p) for p in pts]
     out = segs[k]
+    if arbol or (k == 'd' and L == '0' and depth == 0):
+        for q in pts[::2]: arbol_pts.append(q)
     for i in range(len(pts)-1):
         out.append((pts[i][0], pts[i][1], pts[i+1][0], pts[i+1][1]))
 
@@ -149,6 +152,14 @@ print({k: len(v) for k, v in segs.items()}, 'puertas', len(puertas), 'textos', l
 #   que se reemplazan por un contorno trazado a mano).
 # - agregar: (nombre, contorno, es_exterior). Para lo que no tiene muros que lo encierren.
 # - renombrar: ((x, y) de un punto interior, nombre) para halls y pasillos sin rótulo en el plano.
+# Árboles del predio y de la vereda (x, y, radio de copa), ubicados a mano sobre el plano: en el DWG
+# están dibujados como líneas sueltas, no como objetos. Se usan en el mapa del folleto.
+ARBOLES = [(9.2, 4.6, 3.5), (8.3, 25, 2.6), (16.2, 22.7, 1), (20.2, 25.2, 1.5), (26, 26.5, 1.5), (30.4, 25.8, 3.6), (38.5, 27.5, 2),
+           (47.7, 21.8, 1), (52.1, 21.8, 1.2), (45, 32.1, 4), (52.1, 41.4, 1), (71.7, 25, 2.5), (83.7, 30.8, 2.2), (97.1, 27.5, 3.6),
+           (99.2, 7.1, 3.3), (101.7, 37.1, 2.6), (88.3, 46.7, 6.5), (101.2, 54.2, 5), (75, 39.6, 1), (75.4, 57.5, 1), (80, 62.9, 2.5),
+           (55.4, 63.8, 2.2), (44.2, 60.8, 2), (46.7, 57.5, 2), (51.9, 54.2, 1), (87.9, 67.5, 1.5), (96.5, 36.3, 1.2),
+           (107, 58, 1), (107.2, 61, 1), (107.4, 64, 1), (107.6, 67, 1),
+           (107.9, 8.7, 1.7), (108.8, 18.2, 1.7), (109.4, 27.9, 1.8), (110.6, 39, 1.8), (111.7, 52.9, 1.8), (112.8, 65.2, 1.8)]
 EDIFICIOS = [(19.5, 6.5, 52.6, 23.6), (53.4, 3.7, 98.8, 23.3), (50.4, 32.2, 73.6, 61.2), (9.5, 45.2, 39.6, 64.2)]
 CURADO = {
     'pb': {
@@ -448,11 +459,23 @@ for nid, nombre, (ax, ay, bx, by) in NIVELES:
         i2 = base; n2 = 2
         while i2 in ids: i2 = f'{base}-{n2}'; n2 += 1
         ids.add(i2); l['id'] = i2
+    # siluetas de los edificios (para el mapa del folleto)
+    R3 = 0.1; hm_ = np.zeros((int(H/R3)+2, int(W/R3)+2), np.uint8)
+    for l in locales:
+        if not l.get('exterior'): cv2.fillPoly(hm_, [(np.array(l['poly'])/100/R3).astype(np.int32)], 255)
+    hm_ = cv2.morphologyEx(cv2.dilate(hm_, np.ones((7, 7), np.uint8)), cv2.MORPH_CLOSE, np.ones((21, 21), np.uint8))
+    hm_ = cv2.morphologyEx(hm_, cv2.MORPH_OPEN, np.ones((15, 15), np.uint8))
+    huellas = []
+    for c in cv2.findContours(hm_, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[0]:
+        if cv2.contourArea(c)*R3*R3 < 25: continue
+        c = cv2.approxPolyDP(c, 2.5, True).reshape(-1, 2)
+        if len(c) >= 3: huellas.append([[cm(p[0]*R3), cm(p[1]*R3)] for p in c])
+    arboles = [[cm(x), cm(y), cm(r)] for x, y, r in ARBOLES] if nid == 'pb' else []
     data = {
         'id': nid, 'nombre': nombre, 'ancho': cm(W), 'alto': cm(H),
         'muros': pack(S['m']), 'aberturas': pack(S['a']), 'barreras': pack(barreras), 'detalle': pack(S['d'], 0.12),
         'etiquetas': [{'x': cm(e[0]), 'y': cm(e[1]), 't': e[2]+(' '+e[3] if e[3] else '')} for e in etiquetas],
-        'locales': locales,
+        'locales': locales, 'huellas': huellas, 'arboles': arboles,
     }
     datos[nid] = data
     indice.append({'id': nid, 'nombre': nombre, 'archivo': nid+'.json', 'ancho': cm(W), 'alto': cm(H)})
@@ -512,4 +535,4 @@ for nid, d in datos.items():
     json.dump(d, open(os.path.join(OUT, nid+'.json'), 'w'), ensure_ascii=False, separators=(',', ':'))
 # Norte: el símbolo del plano apunta a 215,5° (antihorario desde +X del dibujo); en pantalla,
 # con Y hacia abajo, son 234,5° en sentido horario desde "arriba".
-json.dump({'norte': 234.5, 'lat': -34.86, 'lon': -56.19, 'huso': -3, 'niveles': indice}, open(os.path.join(OUT, 'niveles.json'), 'w'), ensure_ascii=False, indent=1)
+json.dump({'predio': [[500, 380], [10410, 380], [10920, 6880], [750, 6880]], 'calle': 'Av. Millán', 'norte': 234.5, 'lat': -34.86, 'lon': -56.19, 'huso': -3, 'niveles': indice}, open(os.path.join(OUT, 'niveles.json'), 'w'), ensure_ascii=False, indent=1)

@@ -23,6 +23,7 @@
     <button id="tabIso" role="tab">Isométrica</button>
     <button id="tabSim" role="tab">Circulación</button>
     <button id="tabSol" role="tab">Sol y sombras</button>
+    <button id="tabFolleto" role="tab">Folleto</button>
   </div>
   <div class="flex1"></div>
   <button id="btnDeshacer" title="Deshacer (Ctrl+Z)">↶</button>
@@ -111,6 +112,12 @@
       <button id="btnSolMuestra" title="Ir a la hora de inicio de la muestra">Hora de la muestra</button>
       <button id="btnEncuadrar3">Encuadrar</button>
     </div>
+    <div class="herramientas oculto" id="herramientasFolleto">
+      <button id="btnAcceso" title="Tocá en el plano desde dónde arranca el recorrido">Marcar punto de partida</button>
+      <button id="btnFolSVG" class="activo" title="Vectorial: se edita en Illustrator, Inkscape, Figma o Canva">Descargar SVG</button>
+      <button id="btnFolPNG" title="Imagen lista para pegar">Descargar PNG</button>
+    </div>
+    <div id="folleto" class="oculto"></div>
     <canvas id="plano" tabindex="0"></canvas>
     <div id="iso" class="oculto"></div>
     <div id="pista" class="pista"></div>

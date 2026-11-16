@@ -65,6 +65,7 @@ export function fijarHerramienta(h) {
     mover: '', espacios: 'Tocá un salón para elegirlo o quitarlo.',
     dibujar: 'Tocá para marcar cada esquina (se pega a las esquinas de los muros). Doble clic o Enter para cerrar el espacio. Esc cancela.',
     medir: 'Tocá dos puntos para medir la distancia.',
+    acceso: 'Tocá en el plano el punto de partida del recorrido (por ejemplo, el portón del colegio).',
     entrada: 'Tocá en el plano el lugar por donde ENTRA la gente.', salida: 'Tocá en el plano el lugar por donde SALE la gente.',
     rect: 'Arrastrá de una esquina a la opuesta para dibujar un espacio rectangular.',
     forma: 'Tocá un espacio para editarlo: arrastrá sus esquinas, los puntos chicos agregan una esquina, doble clic la quita, Supr borra el espacio.',
@@ -381,7 +382,7 @@ function alSoltar(e) {
   else if (h === 'espacios') {
     const esp = espacioEn(a.x, a.y);
     if (esp) { marcar(); const p = proyecto(); p.espacios = p.espacios.includes(esp.id) ? p.espacios.filter(i => i !== esp.id) : [...p.espacios, esp.id]; avisar('espacios'); }
-  } else if (h === 'entrada' || h === 'salida') agregar(catalogo().find(c => c.id === h), iman(a.x), iman(a.y));
+  } else if (h === 'entrada' || h === 'salida' || h === 'acceso') agregar(catalogo().find(c => c.id === h), iman(a.x), iman(a.y));
   else if (h === 'forma') { ui.activo = espacioEn(a.x, a.y)?.id || null; pedir(); }
   else if (h === 'dibujar') {
     const q = imanPunto(a.x, a.y);

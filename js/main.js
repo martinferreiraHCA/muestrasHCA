@@ -3,6 +3,7 @@ import * as E from './estado.js';
 import { proyecto, marcar, avisar, uid } from './estado.js';
 import { cargarIndice, cargarNivel, espaciosDe, espaciosElegidos, geo } from './niveles.js';
 import * as SOL from './sol.js';
+import { generarFolleto, aPNG, TEMAS, FORMATOS, FOLLETO_DEF } from './folleto.js';
 import * as P from './plano.js';
 import { ui } from './plano.js';
 import { generarPDF } from './pdf.js';
@@ -12,7 +13,7 @@ const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const num = (v, min, max, def) => { const n = parseFloat(String(v).replace(',', '.')); return isFinite(n) ? Math.max(min, Math.min(max, n)) : def; };
 
-let indice = [], nivel = null, iso = null, vistaIso = false, vistaSim = false, vistaSol = false, portapapeles = [], editandoPanel = false;
+let indice = [], nivel = null, iso = null, vistaIso = false, vistaSim = false, vistaSol = false, vistaFol = false, portapapeles = [], editandoPanel = false;
 
 // ---------- utilidades de interfaz ----------
 let tAviso;
@@ -71,11 +72,12 @@ async function asegurarIso() {
   return iso;
 }
 async function ver(v) {
-  vistaIso = v === 'iso'; vistaSim = v === 'sim'; vistaSol = v === 'sol';
+  vistaIso = v === 'iso'; vistaSim = v === 'sim'; vistaSol = v === 'sol'; vistaFol = v === 'folleto';
+  $('tabFolleto').classList.toggle('activo', vistaFol); $('herramientasFolleto').classList.toggle('oculto', !vistaFol); $('folleto').classList.toggle('oculto', !vistaFol);
   $('tabSol').classList.toggle('activo', vistaSol); $('herramientasSol').classList.toggle('oculto', !vistaSol);
   if (!vistaSol) solPausar();
   $('tabPlano').classList.toggle('activo', v === 'plano'); $('tabIso').classList.toggle('activo', vistaIso); $('tabSim').classList.toggle('activo', vistaSim);
-  $('plano').classList.toggle('oculto', vistaIso); $('iso').classList.toggle('oculto', !vistaIso);
+  $('plano').classList.toggle('oculto', vistaIso || vistaFol); $('iso').classList.toggle('oculto', !vistaIso);
   $('herramientas').classList.toggle('oculto', v !== 'plano'); $('herramientasIso').classList.toggle('oculto', !vistaIso); $('herramientasSim').classList.toggle('oculto', !vistaSim);
   if (!vistaSim) simPausar();
   ui.capa = vistaSim ? (ctx, k) => sim?.dibujar(ctx, k, $('selSimMapa').value) : null;
@@ -95,10 +97,48 @@ async function ver(v) {
     iso?.mostrarIso(false);
     if (vistaSim) { ui.alHerramienta('mover'); ui.seleccion.clear(); if (!sim) simCrear(); }
     if (vistaSol) { ui.alHerramienta('mover'); ui.seleccion.clear(); }
+    if (vistaFol) await pintarFolleto();
     pintarPanel(); P.pedir();
   }
 }
 const verIso = si => ver(si ? 'iso' : 'plano');
+
+// ---------- folleto: mapa «cómo llegar» ----------
+let folleto = null;
+const opFol = () => ({ ...FOLLETO_DEF, ...(proyecto().folleto || {}) });
+async function pintarFolleto() {
+  const suelo = await cargarNivel(indice.find(n => n.id === 'pb') || indice[0]);
+  folleto = generarFolleto(nivel, suelo, proyecto(), opFol());
+  $('folleto').innerHTML = folleto.svg.replace(/^<\?xml[^>]*>\s*/, '');
+  ui.pista(folleto.aviso);
+}
+function pintarPanelFolleto() {
+  const o = opFol(), p = proyecto(), el = $('panelDer');
+  const sel = (id, obj, v, nom) => `<select id="${id}">${Object.entries(obj).map(([k, t]) => `<option value="${k}" ${k === v ? 'selected' : ''}>${nom(t)}</option>`).join('')}</select>`;
+  el.innerHTML = `
+    <section><h2>Mapa para folleto</h2>
+      <p class="ayuda">Un mapa ilustrado con el caminito desde el punto de partida hasta la muestra. El recorrido va a la <b>Entrada</b> de la muestra si está marcada; si no, al espacio elegido.</p>
+      <label>Título<input id="fTitulo" type="text" value="${esc(o.titulo)}" placeholder="${esc(p.nombre)}"></label>
+      <label>Subtítulo<input id="fSub" type="text" value="${esc(o.subtitulo)}" placeholder="Fecha · horario · nivel"></label>
+      <label>Texto en la partida<input id="fPartida" type="text" value="${esc(o.partida)}"></label>
+      <label>Texto en la llegada<input id="fLlegada" type="text" value="${esc(o.llegada)}" placeholder="Nombre del espacio"></label>
+    </section>
+    <section><h2>Estilo</h2>
+      <label>Colores${sel('fTema', TEMAS, o.tema, t => t.nombre)}</label>
+      <label>Formato${sel('fFormato', FORMATOS, o.formato, t => t[2])}</label>
+      <label>Encuadre<select id="fEncuadre"><option value="recorrido" ${o.encuadre === 'recorrido' ? 'selected' : ''}>Acercar al recorrido</option><option value="predio" ${o.encuadre === 'predio' ? 'selected' : ''}>Todo el colegio</option></select></label>
+      <label class="check"><input id="fArboles" type="checkbox" ${o.arboles ? 'checked' : ''}> Árboles</label>
+      <label class="check"><input id="fNombres" type="checkbox" ${o.nombres ? 'checked' : ''}> Nombres de patios</label>
+      <label class="check"><input id="fLeyenda" type="checkbox" ${o.leyenda ? 'checked' : ''}> Leyenda con distancia</label>
+    </section>
+    <section><h2>Para editarlo</h2>
+      <p class="ayuda">El SVG es vectorial y viene separado en capas con nombre (predio, edificios, árboles, recorrido, marcadores, encabezado…), con los textos como texto. Se abre en Illustrator, Inkscape, Figma, Affinity o Canva.</p>
+    </section>`;
+  const poner = (id, k, check) => { const f = () => { proyecto().folleto = { ...(proyecto().folleto || {}), [k]: check ? $(id).checked : $(id).value }; avisar('folleto'); }; $(id)[check || $(id).tagName === 'SELECT' ? 'onchange' : 'oninput'] = f; };
+  poner('fTitulo', 'titulo'); poner('fSub', 'subtitulo'); poner('fPartida', 'partida'); poner('fLlegada', 'llegada');
+  poner('fTema', 'tema'); poner('fFormato', 'formato'); poner('fEncuadre', 'encuadre');
+  poner('fArboles', 'arboles', true); poner('fNombres', 'nombres', true); poner('fLeyenda', 'leyenda', true);
+}
 
 // ---------- sol y sombras ----------
 let solCache = null, solCorre = 0;
@@ -340,6 +380,7 @@ function pintarPanel() {
   if (editandoPanel || !nivel) return;
   if (vistaSim) return pintarPanelSim();
   if (vistaSol) return pintarPanelSol();
+  if (vistaFol) return pintarPanelFolleto();
   const sel = P.seleccionados(), el = $('panelDer');
   if (!sel.length) {
     const its = P.itemsNivel(), cuenta = new Map();
@@ -494,6 +535,7 @@ async function exportarPDF() {
     <label class="check"><input type="checkbox" name="iso" checked> Agregar vista isométrica</label>
     ${sim && sim.t > 0 && !sim.falta && !$('plano').classList.contains('oculto') ? '<label class="check"><input type="checkbox" name="circ" checked> Agregar el mapa de circulación simulado</label>' : ''}
     ${$('plano').classList.contains('oculto') ? '' : `<label class="check"><input type="checkbox" name="sol" ${vistaSol ? 'checked' : ''}> Agregar el mapa de sol y sombras (${SOL.hhmm(solHora())} h)</label>`}
+    <label class="check"><input type="checkbox" name="fol" ${vistaFol ? 'checked' : ''}> Agregar el mapa «cómo llegar» del folleto</label>
     <label class="check"><input type="checkbox" name="lista" checked> Agregar listado de elementos y nombres</label>
     <label class="check"><input type="checkbox" name="detalle" ${ui.detalle ? 'checked' : ''}> Mostrar el detalle del plano (mobiliario fijo, pavimentos)</label>
     ${pie('Descargar PDF')}`);
@@ -526,6 +568,10 @@ async function exportarPDF() {
         q.sol.el > 0.5 ? `Sol a ${Math.round(q.sol.el)}° de altura, desde el ${SOL.cardinal(q.sol.az)} · un muro de ${String(p.altura).replace('.', ',')} m da ${(p.altura * SOL.vectores(q.sol, q.norte).largo).toFixed(1).replace('.', ',')} m de sombra` : 'A esta hora no hay sol.',
         afuera.length ? 'Al sol: ' + afuera.map(e => `${e.nombre} ${q.sol.el > 0.5 ? SOL.pctSol(e.poly, q.path) : 0} %`).join(' · ') : 'Elegí espacios al aire libre para ver qué porcentaje queda al sol.'],
         pie: 'Sombras de los edificios y de los elementos altos. Gris claro: interiores techados. No se consideran árboles ni edificios vecinos.' });
+    }
+    if (r.fol) {
+      const suelo = await cargarNivel(indice.find(n => n.id === 'pb') || indice[0]), f = generarFolleto(nivel, suelo, p, opFol());
+      paginas.unshift({ url: await aPNG(f.svg, f.w, f.h, 2), tipo: 'PNG', w: f.w, h: f.h, titulo: `${nivel.nombre}  ·  Cómo llegar`, lineas: [], pie: '' });
     }
     const doc = generarPDF(p, niveles, { paginas, formato: r.formato, iso: !!captura, lista: r.lista, detalle: r.detalle, capturaIso: captura });
     if (captura) { iso.actualizarIso(nivel, p, opIso()); if (vistaIso) iso.encuadrar(true); }
@@ -565,8 +611,11 @@ function conectar() {
   $('selProyecto').onchange = async e => { E.abrirProyecto(e.target.value); await fijarNivel(proyecto().nivel); if (vistaSim) simCrear(); };
   $('btnNuevo').onclick = async () => { const n = await pedirNombre('Nueva muestra', 'Muestra de …'); if (n) { E.crearProyecto(n); await fijarNivel(proyecto().nivel); } };
   $('btnMasProyecto').onclick = menuProyecto;
-  $('selNivel').onchange = async e => { proyecto().nivel = e.target.value; avisar('nivel'); await fijarNivel(e.target.value); simCrear(); solTabla = null; if (vistaIso) verIso(true); };
-  $('tabPlano').onclick = () => ver('plano'); $('tabIso').onclick = () => ver('iso'); $('tabSim').onclick = () => ver('sim'); $('tabSol').onclick = () => ver('sol');
+  $('selNivel').onchange = async e => { proyecto().nivel = e.target.value; avisar('nivel'); await fijarNivel(e.target.value); simCrear(); solTabla = null; if (vistaIso) verIso(true); if (vistaFol) pintarFolleto(); };
+  $('tabPlano').onclick = () => ver('plano'); $('tabIso').onclick = () => ver('iso'); $('tabSim').onclick = () => ver('sim'); $('tabSol').onclick = () => ver('sol'); $('tabFolleto').onclick = () => ver('folleto');
+  $('btnAcceso').onclick = async () => { await ver('plano'); ui.alHerramienta('acceso'); };
+  $('btnFolSVG').onclick = () => folleto && descargar(archivo(proyecto().nombre) + '-como-llegar.svg', folleto.svg, 'image/svg+xml');
+  $('btnFolPNG').onclick = async () => { if (!folleto) return; try { descargar(archivo(proyecto().nombre) + '-como-llegar.png', await aPNG(folleto.svg, folleto.w, folleto.h)); } catch (e) { aviso(e.message); } };
   $('solFecha').onchange = e => solPoner({ fecha: e.target.value });
   $('solHora').oninput = e => { proyecto().sol = { fecha: solFecha(), hora: +e.target.value }; solTexto(); pintarPanelSol(true); P.pedir(); };
   $('solHora').onchange = e => solPoner({ hora: +e.target.value });
@@ -601,7 +650,7 @@ function conectar() {
       if (propio) propio.nombre = n; else p.renombres[id] = n;
     } else if (a === 'borrar') { P.quitarEspacio(id); return; }
     else if (a === 'forma') {
-      if (vistaIso || vistaSim || vistaSol) await ver('plano');
+      if (vistaIso || vistaSim || vistaSol || vistaFol) await ver('plano');
       ui.alHerramienta('forma'); ui.activo = id;
       const e = espaciosDe(nivel, p).find(x => x.id === id); P.centrarEn(e.poly); return;
     } else {
@@ -615,7 +664,7 @@ function conectar() {
     const b = e.target.closest('.tipo'); if (!b) return;
     const t = E.catalogo().find(c => c.id === b.dataset.id);
     if (e.target.dataset.a === 'editar') return editarTipo(t);
-    if (vistaIso || vistaSol) await ver('plano');
+    if (vistaIso || vistaSol || vistaFol) await ver('plano');
     P.agregar(t);
   };
   $('catalogo').addEventListener('dragstart', e => { const b = e.target.closest('.tipo'); if (b) e.dataTransfer.setData('text/plain', b.dataset.id); });
@@ -636,7 +685,7 @@ function conectar() {
     const ctrl = e.ctrlKey || e.metaKey, k = e.key.toLowerCase();
     if (ctrl && k === 'z') { e.preventDefault(); e.shiftKey ? E.rehacer() : E.deshacer(); return; }
     if (ctrl && k === 'y') { e.preventDefault(); E.rehacer(); return; }
-    if (vistaIso) return;
+    if (vistaIso || vistaFol) return;
     const sel = P.seleccionados();
     if (ctrl && k === 'd') { e.preventDefault(); duplicar(); }
     else if (ctrl && k === 'a') { e.preventDefault(); P.itemsNivel().forEach(i => ui.seleccion.add(i.id)); pintarPanel(); P.pedir(); }
@@ -674,6 +723,7 @@ async function arrancar() {
     const ids = new Set(proyecto().items.map(i => i.id));
     [...ui.seleccion].forEach(id => { if (!ids.has(id)) ui.seleccion.delete(id); });
     pintarBarra(); solCache = null;
+    if (vistaFol) { pintarFolleto(); if (que === 'folleto') return; }
     if (que !== 'nombre' && que !== 'sol' && sim) { sim = null; simComp = null; simPausar(); if (vistaSim) simCrear(); }
     if (que !== 'items' && que !== 'nombre') pintarEspacios();
     if (que === 'catalogo' || que === 'todo') pintarCatalogo();

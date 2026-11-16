@@ -7,7 +7,7 @@ export const geo = {};
 export async function cargarIndice() {
   const r = await fetch('data/niveles.json');
   if (!r.ok) throw new Error('No se pudo leer data/niveles.json');
-  const j = await r.json(); Object.assign(geo, { lat: j.lat, lon: j.lon, huso: j.huso, norte: j.norte });
+  const j = await r.json(); Object.assign(geo, { lat: j.lat, lon: j.lon, huso: j.huso, norte: j.norte, calle: j.calle, predio: (j.predio || []).map(p => [p[0] / 100, p[1] / 100]) });
   return j.niveles;
 }
 
@@ -29,7 +29,8 @@ export async function cargarNivel(info) {
   const d = await r.json();
   const n = {
     id: d.id, nombre: d.nombre, ancho: d.ancho / 100, alto: d.alto / 100,
-    muros: aMetros(d.muros), aberturas: aMetros(d.aberturas), barreras: aMetros(d.barreras || []), pisos: d.pisos || null, detalle: aMetros(d.detalle),
+    muros: aMetros(d.muros), aberturas: aMetros(d.aberturas), barreras: aMetros(d.barreras || []), pisos: d.pisos || null,
+    huellas: (d.huellas || []).map(h => h.map(p => [p[0] / 100, p[1] / 100])), arboles: (d.arboles || []).map(a => a.map(v => v / 100)), detalle: aMetros(d.detalle),
     locales: d.locales.map(l => ({
       id: l.id, nombre: l.nombre, auto: !!l.auto, exterior: !!l.exterior, area: l.area,
       poly: l.poly.map(p => [p[0] / 100, p[1] / 100]),

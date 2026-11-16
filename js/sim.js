@@ -14,7 +14,7 @@ const FIJOS = ['mesa', 'mesa-redonda', 'caja', 'cilindro', 'panel', 'banco', 'zo
 export const esEntrada = it => it.tipo === 'entrada';
 export const esSalida = it => it.tipo === 'salida';
 export function esParada(it) {
-  if (esEntrada(it) || esSalida(it) || it.modelo === 'persona' || it.modelo === 'texto' || it.modelo === 'silla') return false;
+  if (esEntrada(it) || esSalida(it) || it.tipo === 'acceso' || it.modelo === 'persona' || it.modelo === 'texto' || it.modelo === 'silla') return false;
   return it.parada ?? (it.modelo === 'stand' || (!!it.etiqueta && FIJOS.includes(it.modelo)));
 }
 
@@ -24,11 +24,11 @@ function azar(semilla) {      // generador reproducible (mulberry32)
 }
 
 export class Simulacion {
-  constructor(nivel, proy, params = {}, semilla = 7) {
+  constructor(nivel, proy, params = {}, semilla = 7, area = null) {
     this.p = { ...SIM_DEF, ...params };
     this.rnd = azar(semilla);
     const items = proy.items.filter(i => i.nivel === nivel.id);
-    const A = areaTrabajo(nivel, proy, 3);
+    const A = area || areaTrabajo(nivel, proy, 3);
     this.x0 = A.x0; this.y0 = A.y0;
     this.gw = Math.ceil((A.x1 - A.x0) / C); this.gh = Math.ceil((A.y1 - A.y0) / C);
     this.hw = Math.ceil((A.x1 - A.x0) / CH); this.hh = Math.ceil((A.y1 - A.y0) / CH);
@@ -45,6 +45,8 @@ export class Simulacion {
         for (const [p, q] of [[[-w, f], [-w, -d]], [[-w, -d], [w, -d]], [[w, -d], [w, f]]]) this.#linea(...M(...p), ...M(...q));
       } else this.#celdasCerca(it, 0, (i) => { this.bloq[i] = 1; }, true);
     }
+    for (const [cx, cy, r] of area?.circulos || [])           // obstáculos redondos extra (troncos de árboles)
+      for (let y = cy - r; y <= cy + r; y += C * 0.9) for (let x = cx - r; x <= cx + r; x += C * 0.9) { const i = this.#idx(x, y); if (i >= 0 && Math.hypot(x - cx, y - cy) <= r) this.bloq[i] = 1; }
     // penalización junto a obstáculos: la gente prefiere el centro de los pasillos
     this.pen = new Float32Array(this.gw * this.gh).fill(1);
     for (let y = 1; y < this.gh - 1; y++) for (let x = 1; x < this.gw - 1; x++) {
@@ -130,6 +132,24 @@ export class Simulacion {
   }
   #campoParada(n) { return this.#campo('p' + n, this.paradas[n].fuentes); }
   #campoSalida() { return this.#campo('s', this.fSalida); }
+
+  /** Camino a pie entre dos puntos, esquivando muros y muebles. Devuelve [[x, y], …] o null si no hay paso. */
+  camino(desde, hasta, radio = 1.2) {
+    const cerca = (p, r) => { const l = []; for (let y = p[1] - r; y <= p[1] + r; y += C) for (let x = p[0] - r; x <= p[0] + r; x += C) { const i = this.#idx(x, y); if (i >= 0 && !this.bloq[i]) l.push(i); } return l; };
+    const fu = cerca(hasta, radio); if (!fu.length) return null;
+    const campo = this.#campo('c' + hasta.join(), fu);
+    let pos = -1, mejor = Infinity;
+    for (const i of cerca(desde, 3)) { const [x, y] = this.#centro(i), d = Math.hypot(x - desde[0], y - desde[1]); if (isFinite(campo[i]) && d < mejor) { mejor = d; pos = i; } }
+    if (pos < 0) return null;
+    const ruta = [desde, this.#centro(pos)];
+    for (let g = 0; g < 20000 && campo[pos] > 0; g++) {
+      const x = pos % this.gw, y = (pos - x) / this.gw; let m = pos;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const nx = x + dx, ny = y + dy; if (nx < 0 || ny < 0 || nx >= this.gw || ny >= this.gh) continue; const j = ny * this.gw + nx; if (campo[j] < campo[m]) m = j; }
+      if (m === pos) break; pos = m; ruta.push(this.#centro(pos));
+    }
+    ruta.push(hasta);
+    return ruta;
+  }
 
   // ---------- recorrido guiado ----------
   #planificar() {

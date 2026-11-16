@@ -150,7 +150,7 @@ export function generarPDF(proy, niveles, op) {
     pg.lineas.forEach((l, i) => doc.text(l, M, M + 21 + i * 4.5));
     const y0 = M + 21 + pg.lineas.length * 4.5 + 1, h = PH - y0 - M - 4, w = PW - 2 * M, ar = pg.w / pg.h;
     const iw = Math.min(w, h * ar), ih = iw / ar;
-    doc.addImage(pg.url, 'JPEG', M + (w - iw) / 2, y0, iw, ih, undefined, 'FAST');
+    doc.addImage(pg.url, pg.tipo || 'JPEG', M + (w - iw) / 2, y0, iw, ih, undefined, 'FAST');
     doc.setFontSize(7.5); doc.setTextColor(102, 112, 133);
     doc.text(pg.pie, M, PH - M - 0.5);
   }
