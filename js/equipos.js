@@ -46,7 +46,7 @@ const sinAcentos = t => t.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
 function pedidos(texto, lugarSuelto = '') {
   const t = sinAcentos(texto), r = { lugar: '', necesidad: texto.trim() };
   if (/\bpared/.test(t)) r.pared = true;
-  if (/libre adelante|interactiv|espacio para|juego/.test(t)) r.libre = true;
+  if (/libre adelante|interactiv|espacio para|tirar/.test(t)) r.libre = true;
   if (/enchufe|corriente|electric/.test(t)) r.enchufe = true;
   const m = t.match(/mandala|patio[a-z ]*|hall[a-z0-9 ]*|salon[a-z0-9 ]*|aula \d+|gimnasio|auditorio|comedor|biblioteca|laboratorio|cancha[a-z ]*/);
   if (m) r.lugar = m[0].trim();
@@ -54,14 +54,23 @@ function pedidos(texto, lugarSuelto = '') {
   return r;
 }
 function leerPlanilla(lineas, esFila) {
-  const eq = [], vistos = new Set(); let seccion = '';
+  const eq = [], vistos = new Set(); let seccion = '', categoria = '';
   for (const linea of lineas) {
     const c = linea.split('\t').map(x => x.trim());
-    if (!esFila(c)) { if (c.length === 1 && c[0] && !/^grupo$/i.test(c[0])) seccion = c[0]; continue; }       // título de sección
-    const nombre = c[1], clave = sinAcentos(nombre); if (!nombre || vistos.has(clave)) continue; vistos.add(clave);         // si se pegó dos veces, cuenta una
+    if (!esFila(c)) {
+      const t = c[0];
+      if (c.length !== 1 || !t || /^grupo$/i.test(t)) continue;
+      // «Programación — 9 equipos» es una categoría; «Sectores con pared» es un sector; las frases largas son comentarios
+      const m = t.match(/^(.{2,40}?)\s*[—–-]\s*\d+\s+equipos?\b/i);
+      if (m) { categoria = m[1].trim(); seccion = ''; }
+      else if (t.length <= 60 && !/[.:]\s|\.$/.test(t) && /pared|libre adelante|interactiv|central|flexible/i.test(t)) seccion = t;
+      continue;
+    }
+    const nombre = c[1], clave = sinAcentos(nombre).replace(/[^a-z0-9]/g, ''); if (!nombre || vistos.has(clave)) continue; vistos.add(clave);         // si se pegó dos veces, cuenta una
     const integrantes = c[2].split(/,|\s+y\s+|\s+e\s+/i).map(x => x.trim()).filter(Boolean);
-    const nec = (c[3] || '').replace(/Grupo$/, '').trim();
-    eq.push({ nombre, estudiantes: Math.min(40, integrantes.length), grupo: c[0], integrantes: integrantes.join(', '), ...pedidos(nec + ' · ' + seccion), necesidad: nec, seccion });
+    const nec = (c[3] || '').replace(/Grupo$/, '').replace(/^sin pedido.*$/i, '').trim(), estado = (c[4] || '').replace(/Grupo$/, '').trim();
+    eq.push({ nombre, estudiantes: Math.min(40, integrantes.length), grupo: c[0], integrantes: integrantes.join(', '), ...pedidos(nec + (seccion ? ' · ' + seccion : '')), necesidad: nec,
+      ...(categoria && { categoria }), ...(estado && { estado, listo: !/falta|revisar|pendiente|salvo|sin marcar|prioridad/i.test(estado) && (/todo marcado|prácticamente todo/i.test(estado) || (estado.match(/✓/g) || []).length >= 5) }) });
   }
   return eq;
 }
@@ -115,7 +124,7 @@ export async function distribuir(nivel, proy, equipos, tipo, porMesa = 0, simula
       else { if (hueco.length * C >= 0.6 && hueco.length * C <= 3.2) for (const h of hueco) zonas.push([h[0], h[1], 1.0]); hueco = []; }
     }
   }
-  const grupos = [...new Set(equipos.map(q => q.grupo).filter(Boolean))];
+  const grupos = [...new Set(equipos.map(q => q.grupo).filter(Boolean))], cats = [...new Set(equipos.map(q => q.categoria).filter(Boolean))];
   const cache = new Map();
   /** Lugares posibles para una huella w × d en un espacio: contra las paredes (en orden, dando la vuelta) y en islas. */
   function sitios(e, w, d) {
@@ -151,7 +160,8 @@ export async function distribuir(nivel, proy, equipos, tipo, porMesa = 0, simula
   /** Ubica una lista de equipos en un espacio con una separación mínima entre puestos. Devuelve los que no entraron. */
   function ubicar(e, lista, sep, puestos, v) {
     const afuera = [];
-    for (const q of [...lista].sort(ORDEN[v.orden])) {
+    // dentro de un lugar, los de una misma categoría van seguidos a lo largo de la pared
+    for (const q of [...lista].sort((a, b) => (cats.indexOf(a.categoria) - cats.indexOf(b.categoria)) || ORDEN[v.orden](a, b))) {
       const h = huellaDe(q), S = sitios(e, h.w, h.d), k = Math.floor(S.per.length * v.giro / 4);
       const per = k ? [...S.per.slice(k), ...S.per.slice(0, k)] : S.per;            // por qué pared se empieza
       const enPared = () => (q.pared && per.find(c => c.muro && !puestos.some(p => seMolestan(c, p, sep)))) || per.find(c => !puestos.some(p => seMolestan(c, p, sep)));
@@ -170,7 +180,12 @@ export async function distribuir(nivel, proy, equipos, tipo, porMesa = 0, simula
     const peso = espacios.map((e, i) => v.reparto === 'area' ? e.area : perim[i]);
     const asign = espacios.map(() => []), sueltos = [];
     for (const q of equipos) { const i = q.lugar ? espacios.findIndex(e => sinAcentos(e.nombre).includes(sinAcentos(q.lugar))) : -1; if (i >= 0) asign[i].push(q); else sueltos.push(q); }
-    for (const q of sueltos) { let m = 0; espacios.forEach((_, i) => { if ((asign[i].length + 1) / peso[i] < (asign[m].length + 1) / peso[m]) m = i; }); asign[m].push(q); }
+    if (sueltos.some(q => q.categoria)) {
+      // con categorías: cada categoría queda junta, llenando un lugar tras otro según cuánto le toca a cada uno
+      const orden = [...sueltos].sort((a, b) => cats.indexOf(a.categoria) - cats.indexOf(b.categoria)), tot = peso.reduce((a, b) => a + b, 0);
+      let i = 0, acum = 0;
+      orden.forEach((q, k) => { while (i < espacios.length - 1 && k >= Math.round((acum + peso[i]) / tot * orden.length)) { acum += peso[i]; i++; } asign[i].push(q); });
+    } else for (const q of sueltos) { let m = 0; espacios.forEach((_, i) => { if ((asign[i].length + 1) / peso[i] < (asign[m].length + 1) / peso[m]) m = i; }); asign[m].push(q); }
     const porEsp = espacios.map(() => []); let resto = [];
     espacios.forEach((e, i) => {
       if (!asign[i].length) return;
@@ -185,9 +200,10 @@ export async function distribuir(nivel, proy, equipos, tipo, porMesa = 0, simula
   const aItems = puestos => puestos.map(s => {
     const [fx, fy] = FR[s.rot], corr = s.h.M.atras + tipo.d / 2 - s.h.d / 2;          // el mueble dentro de su huella
     const it = itemDesdeTipo(tipo, Math.round((s.cx + fx * corr) * 100) / 100, Math.round((s.cy + fy * corr) * 100) / 100, nivel.id);
-    const col = s.q.grupo ? COLORES_GRUPO[(grupos.indexOf(s.q.grupo) + COLORES_GRUPO.length) % COLORES_GRUPO.length] : it.color;         // un color por grupo
+    // un color por categoría (Programación, Robótica…); si no hay categorías, por grupo
+    const col = s.q.categoria ? COLORES_GRUPO[cats.indexOf(s.q.categoria) % COLORES_GRUPO.length] : s.q.grupo ? COLORES_GRUPO[grupos.indexOf(s.q.grupo) % COLORES_GRUPO.length] : it.color;
     return Object.assign(it, { rot: s.rot, etiqueta: s.q.nombre, estudiantes: s.q.estudiantes, equipo: true, w: s.h.ancho, mesas: s.h.mesas, color: col,
-      grupo: s.q.grupo, integrantes: s.q.integrantes, necesidad: s.q.necesidad, enchufe: s.q.enchufe });
+      grupo: s.q.grupo, integrantes: s.q.integrantes, necesidad: s.q.necesidad, enchufe: s.q.enchufe, categoria: s.q.categoria, estado: s.q.estado, listo: s.q.listo });
   });
   const cerrar = (d, texto, extra = {}) => ({ items: aItems(d.puestos), sinLugar: d.resto, mesas: d.puestos.reduce((a, s) => a + s.h.mesas, 0), ...extra,
     resumen: `${texto} ${espacios.map(e => `${e.nombre}: ${d.puestos.filter(s => s.e === e).length}`).join(' · ')}.` });

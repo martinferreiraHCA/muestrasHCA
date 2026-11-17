@@ -258,6 +258,9 @@ async function distribuirEquipos() {
   ui.seleccion.clear(); avisar('items'); P.encuadrar();
   const ench = r.items.filter(i => i.enchufe).map(i => i.etiqueta), sinPedido = l.filter(q => q.lugar && !lugares().some(e => sinAc(e.nombre).includes(sinAc(q.lugar)))).map(q => `${q.nombre} (${q.lugar})`);
   if (elegidos.length) r.resumen = `Elegí estos lugares en ${nivel.nombre}: ${elegidos.join(', ')}. ` + r.resumen;
+  const cats = [...new Set(l.map(q => q.categoria).filter(Boolean))], pend = r.items.filter(i => i.estado && !i.listo).map(i => i.etiqueta);
+  if (cats.length) r.resumen += ` Categorías (un color cada una): ${cats.map(c => `${c} ${l.filter(q => q.categoria === c).length}`).join(', ')}.`;
+  if (pend.length) r.resumen += ` Con pendientes según la planilla: ${pend.join(', ')}.`;
   if (ench.length) r.resumen += ` Piden enchufe cerca: ${ench.join(', ')}; el plano no indica dónde hay enchufes, así que eso revisalo en el lugar.`;
   if (sinPedido.length) r.resumen += ` No encontré en el plano el lugar pedido por: ${sinPedido.join(', ')}. Buscalo en la lista de lugares, ponele ese nombre con el lápiz y volvé a distribuir.`;
   $('eqResultado').innerHTML = `<b>${r.items.length} de ${l.length} equipos ubicados${r.mesas > r.items.length ? `, con ${r.mesas} mesas` : ''}.</b> ${esc(r.resumen)}` +
@@ -731,7 +734,7 @@ function pintarPanel() {
   const comun = k => sel.every(i => i[k] === u[k]) ? u[k] : '';
   el.innerHTML = `
     <section><h2>${varios ? sel.length + ' elementos' : esc(u.nombre)}</h2>
-      ${!varios && (u.grupo || u.integrantes) ? `<p class="ayuda">${u.grupo ? `<b>${esc(u.grupo)}</b> · ` : ''}${esc(u.integrantes || '')}${u.necesidad ? `<br><b>Pide:</b> ${esc(u.necesidad)}` : ''}</p>` : ''}
+      ${!varios && (u.grupo || u.integrantes) ? `<p class="ayuda">${u.categoria ? `<b>${esc(u.categoria)}</b> · ` : ''}${u.grupo ? `<b>${esc(u.grupo)}</b> · ` : ''}${esc(u.integrantes || '')}${u.estado ? `<br><b>Estado:</b> <span class="${u.listo ? 'ok' : 'alerta'}">${esc(u.estado)}</span>` : ''}${u.necesidad ? `<br><b>Pide:</b> ${esc(u.necesidad)}` : ''}</p>` : ''}
       <label>Nombre en el plano<input id="pEtiqueta" type="text" value="${esc(comun('etiqueta'))}" placeholder="${varios ? 'Mismo texto para todos' : 'Ej.: Stand 3 · 5.º B'}"></label>
       <div class="fila3">
         <label>Ancho (m)<input id="pW" type="number" min="0.05" max="60" step="0.05" value="${comun('w')}"></label>

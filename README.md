@@ -18,7 +18,9 @@ las ubicaciones.
   después se prueba cambiar de sitio los puestos donde se junta gente.
 - **Planilla de equipos y lugares automáticos**: se puede pegar la planilla tal cual (Grupo, Equipo,
   Integrantes, Necesidad). Cuenta los integrantes, saca los pedidos (un lugar con nombre, pared,
-  lugar libre adelante, enchufe) y pinta cada grupo de un color. Si no hay lugares elegidos, los
+  lugar libre adelante, enchufe) y pinta cada grupo de un color. Si la planilla trae títulos de
+  categoría («Programación — 9 equipos») y columna de estado, colorea por categoría, intenta
+  dejar cada categoría junta y lista los equipos con pendientes; las frases de comentario se ignoran. Si no hay lugares elegidos, los
   elige el sistema y va sumando los más cercanos hasta que entren todos.
 - **Armar el salón solo**: por cada lugar se elige la forma (auditorio, anfiteatro, aula, mesas en U,
   mesas redondas o ronda) y la cantidad de personas; cada lugar guarda su configuración y hay un
