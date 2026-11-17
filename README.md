@@ -77,6 +77,10 @@ las ubicaciones.
   (por defecto el portón del colegio) hasta la muestra, rodeando árboles y pasando por las
   puertas. Sale en SVG vectorial, con capas con nombre y textos editables, y en PNG. Tiene
   cuatro estilos de color, tres formatos y encuadre al recorrido o a todo el colegio.
+- **Cambio masivo**: con varios elementos seleccionados («Seleccionar iguales», «Seleccionar equipos»,
+  Ctrl+A o Shift+arrastrar) se cambia el tipo de mueble, el tamaño o el color de todos a la vez.
+- **Puntos calientes en el PDF**: página con el mapa de aglomeración, los puntos calientes numerados,
+  la causa del principal y qué hacer; y otra con el mapa de tránsito. Se calculan al generar el PDF.
 - **PDF**: una página por nivel con la planta a escala, la vista isométrica, los mapas de
   circulación y de sol y sombras, y el listado de elementos y nombres.
 - Las muestras se guardan solas en el navegador y se pueden exportar/importar como archivo.

@@ -848,6 +848,11 @@ function pintarPanel() {
       </div>
       ${!varios && !['zona', 'texto', 'persona', 'silla'].includes(u.modelo) && listaEquipos().length ? `<label>Equipo asignado<select id="pEquipo"><option value="">— ninguno —</option>${listaEquipos().map(q => `<option value="${esc(q.nombre)}" ${u.equipo && u.etiqueta === q.nombre ? 'selected' : ''}>${esc(q.nombre)} (${q.estudiantes})${mesaDe(q.nombre) && mesaDe(q.nombre) !== u ? ' · ya tiene mesa' : ''}</option>`).join('')}</select></label>` : ''}
       <label class="check" title="Los visitantes de la simulación de circulación se detienen en las paradas"><input id="pParada" type="checkbox" ${sel.every(esParada) ? 'checked' : ''}> Es una parada del recorrido</label>
+      <label>Cambiar ${varios ? `los ${sel.length} elementos` : 'este elemento'} por<select id="pTipo"><option value="">— elegir —</option>${E.catalogo().filter(t => t.grupo !== 'Circulación' && !['zona', 'texto'].includes(t.modelo)).map(t => `<option value="${t.id}">${esc(t.nombre)} (${t.w} × ${t.d} m)</option>`).join('')}</select></label>
+      <div class="botones">
+        <button id="pIguales" title="Selecciona todos los elementos de este mismo tipo en el nivel">Seleccionar iguales</button>
+        <button id="pEquipos" title="Selecciona todas las mesas que tienen un equipo">Seleccionar equipos</button>
+      </div>
       <div class="botones">
         <button id="pDup">Duplicar</button><button id="pGirar">Girar 90°</button>
         <button id="pFrente" title="Dibujar por encima de los demás">Al frente</button>
@@ -887,6 +892,19 @@ function pintarPanel() {
   vivo('pColor', v => sel.forEach(i => { i.color = v; }));
   vivo('pEst', v => { const n = num(v, 0, 40, 0); sel.forEach(i => { i.estudiantes = Math.round(n); }); });
   if ($('pEquipo')) $('pEquipo').onchange = e => { marcar(); const q = listaEquipos().find(x => x.nombre === e.target.value); if (q) asignarEquipo(u, q); else quitarEquipo(u); avisar('items'); };
+  $('pTipo').onchange = e => {
+    const t = E.catalogo().find(c => c.id === e.target.value); if (!t) return;
+    marcar();
+    sel.forEach(i => {            // cambia el mueble; conserva lugar, giro, nombre, equipo y estudiantes
+      Object.assign(i, { tipo: t.id, nombre: t.nombre, modelo: t.modelo, w: t.w * (t.modelo === 'mesa' ? i.mesas || 1 : 1), d: t.d, h: t.h });
+      if (t.modelo !== 'mesa') delete i.mesas;
+      if (i.colorPropio !== undefined) i.colorPropio = t.color; else i.color = t.color;        // las mesas con equipo mantienen el color de su categoría
+    });
+    avisar('items'); aviso(`${sel.length} elemento${sel.length > 1 ? 's cambiados' : ' cambiado'} a ${t.nombre}.`);
+  };
+  const elegir = f => { ui.seleccion.clear(); P.itemsNivel().filter(f).forEach(i => ui.seleccion.add(i.id)); pintarPanel(); P.pedir(); aviso(`${ui.seleccion.size} seleccionados.`); };
+  $('pIguales').onclick = () => elegir(i => sel.some(x => x.tipo === i.tipo));
+  $('pEquipos').onclick = () => elegir(i => i.equipo);
   $('pParada').onchange = e => { marcar(); sel.forEach(i => { i.parada = e.target.checked; }); avisar('items'); };
   $('pDup').onclick = duplicar; $('pBorrar').onclick = borrar; $('pGirar').onclick = () => girarSel(90);
   $('pFrente').onclick = () => { marcar(); const p = proyecto(); p.items = [...p.items.filter(i => !ui.seleccion.has(i.id)), ...sel]; avisar('items'); };
@@ -968,7 +986,7 @@ async function exportarPDF() {
     <p class="ayuda">Se incluye una página por nivel con espacios o elementos: <b>${lista.map(n => esc(n.nombre)).join(', ')}</b>.</p>
     <label>Tamaño de hoja<select name="formato"><option value="a4">A4 apaisado</option><option value="a3">A3 apaisado</option></select></label>
     <label class="check"><input type="checkbox" name="iso" checked> Agregar vista isométrica</label>
-    ${sim && sim.t > 0 && !sim.falta && !$('plano').classList.contains('oculto') ? '<label class="check"><input type="checkbox" name="circ" checked> Agregar el mapa de circulación simulado</label>' : ''}
+    ${P.itemsNivel().some(esEntrada) ? '<label class="check"><input type="checkbox" name="circ" checked> Agregar la circulación: puntos calientes y mapa de tránsito</label>' : '<p class="ayuda">Para incluir los puntos calientes de la circulación, marcá antes la Entrada (paso Recorrido).</p>'}
     ${$('plano').classList.contains('oculto') ? '' : `<label class="check"><input type="checkbox" name="sol" ${vistaSol ? 'checked' : ''}> Agregar el mapa de sol y sombras (${SOL.hhmm(solHora())} h)</label>`}
     <label class="check"><input type="checkbox" name="fol" ${vistaFol ? 'checked' : ''}> Agregar el mapa «cómo llegar» del folleto</label>
     <label class="check"><input type="checkbox" name="lista" checked> Agregar listado de elementos y nombres</label>
@@ -984,17 +1002,30 @@ async function exportarPDF() {
     const paginas = [];
     const fotoPlano = (capa, capaPantalla) => {
       const antes = [ui.capa, ui.capaPantalla, ui.ocultar, new Set(ui.seleccion)];
+      const zonas = ui.zonas; ui.zonas = null;             // las zonas de puertas no van en el PDF: se confundirían con los puntos calientes
       ui.capa = capa; ui.capaPantalla = capaPantalla || null; ui.seleccion.clear();
-      const img = P.imagen(); [ui.capa, ui.capaPantalla, ui.ocultar] = antes; antes[3].forEach(i => ui.seleccion.add(i)); P.pedir();
+      const img = P.imagen(); ui.zonas = zonas; [ui.capa, ui.capaPantalla, ui.ocultar] = antes; antes[3].forEach(i => ui.seleccion.add(i)); P.pedir();
       return img;
     };
-    if (r.circ && sim) {
-      const mapa = $('selSimMapa').value === 'ninguno' ? 'transito' : $('selSimMapa').value;
-      const img = fotoPlano((ctx, k) => sim.dibujar(ctx, k, mapa)), s = sim.resumen(), q = parSim();
-      if (img) paginas.push({ ...img, titulo: `${nivel.nombre}  ·  Circulación de gente (simulación)`, lineas: [
-        `${s.total} visitantes que llegan durante ${q.llegada} min · ${q.permanencia} s por parada${q.tiempoVisita ? ` · hasta ${q.tiempoVisita} min por persona` : ''} · recorrido ${q.modo}${q.hijoPrimero ? ' · primero el stand del hijo' : ''}${q.tandas ? ` · tandas de ${q.tandaTam} cada ${q.tandaCada} min` : ''} · máximo ${s.maxAdentro} personas a la vez`,
-        `${p.horaInicio ? `Sale la última persona ${reloj(s.tUltimo)}` : `Duración ${mmss(s.tUltimo)}`} · recorrido por persona ${s.terminaron ? mmss(s.tiempoProm) + ' min' : '—'} · densidad máxima ${s.densMax.toFixed(1).replace('.', ',')} pers./m² (${nivelDens(s.densMax)}) · ${s.pctAglom.toFixed(1).replace('.', ',')} % del tiempo en aglomeración`],
-        pie: 'Colores: zonas más transitadas o con aglomeración. Línea punteada y números: recorrido guiado sugerido. Círculo rojo: punto más congestionado.' });
+    if (r.circ) {
+      // se usa la simulación que está en pantalla si ya terminó; si no, se calcula una completa para el PDF
+      const s = sim && sim.terminada && !sim.falta ? sim : new Simulacion(nivel, p, parSim());
+      if (!s.falta) {
+        if (!s.terminada) s.completar(4 * 3600);
+        P.encuadrar();
+        const res = s.resumen(), q = parSim(), dg = s.diagnostico(), pc = s.puntosCalientes(), coma = v => v.toFixed(1).replace('.', ',');
+        const datos = [
+          `${res.total} padres que llegan durante ${q.llegada} min · ${q.permanencia} s por stand${q.tiempoVisita ? ` · hasta ${q.tiempoVisita} min por persona` : ''} · recorrido ${q.modo}${q.hijoPrimero ? ' · primero el stand del hijo' : ''}${q.tandas ? ` · tandas de ${q.tandaTam} cada ${q.tandaCada} min` : ''} · máximo ${res.maxAdentro} personas a la vez`,
+          `${p.horaInicio ? `Sale la última persona ${reloj(res.tUltimo)}` : `Duración ${mmss(res.tUltimo)}`} · recorrido por persona ${res.terminaron ? mmss(res.tiempoProm) + ' min' : '—'} · densidad máxima ${coma(res.densMax)} pers./m² (${nivelDens(res.densMax)}) · ${coma(res.pctAglom)} % del tiempo en aglomeración`];
+        const caliente = fotoPlano((ctx, k) => s.dibujar(ctx, k, 'aglomeracion'));
+        if (caliente) paginas.push({ ...caliente, titulo: `${nivel.nombre}  ·  Puntos calientes de la circulación (simulación)`, lineas: [...datos,
+          ...(pc.length ? pc.map((c, n) => `${n + 1}. ${c.donde}: ${coma(c.minutos)} minutos-persona de aglomeración`) : ['No hay puntos calientes: la gente circula sin trabarse.']),
+          ...(dg ? [`Por qué el n.º 1: ${dg.causa}`, `Qué se puede hacer: ${dg.sugerencias.slice(0, 3).map(x => x[1]).join(' ')}`] : [])],
+          pie: 'Rojo: donde la gente estuvo apretada (2 o más personas por m²). Círculos numerados: puntos calientes. Las personas se muestran en el momento de mayor carga.' });
+        const transito = fotoPlano((ctx, k) => s.dibujar(ctx, k, 'transito'));
+        if (transito) paginas.push({ ...transito, titulo: `${nivel.nombre}  ·  Tránsito de gente (simulación)`, lineas: datos,
+          pie: 'Colores: por dónde pasa más gente (de verde a rojo). Línea punteada y números: recorrido guiado sugerido.' });
+      }
     }
     if (r.sol) {
       const q = solAhora(), afuera = espaciosElegidos(nivel, p).filter(e => e.exterior || e.propio);

@@ -386,6 +386,25 @@ export class Simulacion {
    * Explica el punto más congestionado: dónde está, por qué se junta la gente ahí y qué se puede hacer.
    * Devuelve null si no hubo aglomeración que valga la pena marcar.
    */
+  /** Los puntos calientes: hasta `n` lugares donde más tiempo estuvo la gente apretada, separados entre sí. */
+  puntosCalientes(n = 4) {
+    if (this.#calientes) return this.#calientes;
+    const orden = [...this.aglom.keys()].filter(i => this.aglom[i] > 5).sort((a, b) => this.aglom[b] - this.aglom[a]), r = [];
+    const dist = (l, x, y) => Math.min(Infinity, ...l.map(i => { const [cx, cy] = this.#centro(i); return Math.hypot(cx - x, cy - y); }));
+    for (const i of orden) {
+      if (r.length >= n || this.aglom[i] < this.aglom[orden[0]] * 0.15) break;
+      const x = this.x0 + (i % this.hw + 0.5) * CH, y = this.y0 + (Math.floor(i / this.hw) + 0.5) * CH;
+      if (r.some(q => Math.hypot(q.x - x, q.y - y) < 3.5)) continue;
+      const cerca = this.paradas.map(p => ({ p, d: Math.hypot(p.it.x - x, p.it.y - y) })).sort((a, b) => a.d - b.d)[0];
+      const donde = dist(this.entradas.flat(), x, y) < 3 ? 'en la entrada' : cerca && cerca.d < 3 ? `frente a «${cerca.p.nombre}»` : dist(this.fSalida, x, y) < 3 ? 'en la salida' : 'en un paso entre puestos';
+      // suma de la zona (un círculo de 1,5 m): cuántos minutos-persona se pasaron apretados ahí
+      let seg = 0; for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) { const hx = i % this.hw + dx, hy = Math.floor(i / this.hw) + dy; if (hx >= 0 && hy >= 0 && hx < this.hw && hy < this.hh) seg += this.aglom[hy * this.hw + hx]; }
+      r.push({ x, y, donde, minutos: seg / 60 });
+    }
+    return (this.#calientes = r);
+  }
+  #calientes;
+
   diagnostico() {
     if (this.#diag !== undefined) return this.#diag;
     const r = this.resumen(); if (!r.critico || r.pctAglom < 0.5) return (this.#diag = null);
@@ -476,12 +495,19 @@ export class Simulacion {
       const R = Math.max(1, 16 * px), tam = 12 * px;
       ctx.beginPath(); ctx.arc(dg.x, dg.y, R, 0, 7); ctx.strokeStyle = '#d62828'; ctx.lineWidth = 2.5 * px; ctx.setLineDash([5 * px, 4 * px]); ctx.stroke(); ctx.setLineDash([]);
       ctx.font = `700 ${tam}px system-ui, sans-serif`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-      const lineas = ['Punto más congestionado', dg.corto], w = Math.max(...lineas.map(l => ctx.measureText(l).width)) + 14 * px, h = tam * 2.9;
+      const lineas = ['1 · Punto más congestionado', dg.corto], w = Math.max(...lineas.map(l => ctx.measureText(l).width)) + 14 * px, h = tam * 2.9;
       const bx = dg.x + R + 6 * px, by = dg.y - h / 2;
       ctx.beginPath(); ctx.moveTo(dg.x + R, dg.y); ctx.lineTo(bx, dg.y); ctx.stroke();
       ctx.fillStyle = '#d62828'; ctx.beginPath(); ctx.roundRect(bx, by, w, h, 5 * px); ctx.fill();
       ctx.fillStyle = '#fff'; ctx.fillText(lineas[0], bx + 7 * px, by + tam * 0.85);
       ctx.font = `500 ${tam * 0.92}px system-ui, sans-serif`; ctx.fillText(lineas[1], bx + 7 * px, by + tam * 2.05);
+      // los demás puntos calientes, numerados
+      this.puntosCalientes().forEach((q, n) => {
+        if (Math.hypot(q.x - dg.x, q.y - dg.y) < 3) return;
+        ctx.beginPath(); ctx.arc(q.x, q.y, R * 0.8, 0, 7); ctx.strokeStyle = '#d62828'; ctx.lineWidth = 2 * px; ctx.setLineDash([4 * px, 3 * px]); ctx.stroke(); ctx.setLineDash([]);
+        ctx.beginPath(); ctx.arc(q.x + R * 0.8, q.y - R * 0.8, 8 * px, 0, 7); ctx.fillStyle = '#d62828'; ctx.fill();
+        ctx.fillStyle = '#fff'; ctx.font = `700 ${10 * px}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.fillText(n + 1, q.x + R * 0.8, q.y - R * 0.8 + px);
+      });
     }
   }
 }

@@ -25,6 +25,7 @@ const A = {
   'llenar todo el lugar': ['Ignora la cantidad de personas y pone todas las sillas que entran.', 'En el salón multiuso, en auditorio, entran unas 60. Prueba varios corrimientos de las filas y deja el que más da.'],
   'el frente esta': ['Hacia qué lado de la pantalla miran las sillas (donde está el escenario o el pizarrón).', '«Automático» prueba los cuatro lados y deja el que da más lugares y pone a la gente más cerca del escenario. «Arriba»: todos miran hacia el borde superior del plano.'],
   // --- propiedades ---
+  'cambiar ': ['Reemplaza el mueble por otro del catálogo, conservando el lugar, el giro, el nombre y el equipo.', 'Tocás «Seleccionar equipos», elegís «Tablón» y todas las mesas de equipos pasan a ser tablones de una vez.'],
   'ancho (m)': ['Medida del mueble de lado a lado, en metros.', '1,2 es una mesa de un metro veinte de frente.'],
   'fondo (m)': ['Medida del mueble de adelante hacia atrás, en metros.', '0,6 es una mesa de sesenta centímetros de profundidad.'],
   'alto (m)': ['Altura del mueble. Se ve en 3D y sirve para las sombras.', 'Una mesa mide 0,75; un panel, 1,8.'],

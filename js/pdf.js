@@ -149,6 +149,7 @@ export function generarPDF(proy, niveles, op) {
   for (const pg of op.paginas || []) {        // mapas capturados del plano: circulación, sol y sombras
     pagina(); encabezado(pg.titulo);
     doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(60, 68, 82);
+    pg.lineas = pg.lineas.flatMap(l => doc.splitTextToSize(l, PW - 2 * M));          // los renglones largos se parten
     pg.lineas.forEach((l, i) => doc.text(l, M, M + 21 + i * 4.5));
     const y0 = M + 21 + pg.lineas.length * 4.5 + 1, h = PH - y0 - M - 4, w = PW - 2 * M, ar = pg.w / pg.h;
     const iw = Math.min(w, h * ar), ih = iw / ar;
