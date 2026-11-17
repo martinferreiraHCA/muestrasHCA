@@ -249,7 +249,9 @@ const NO_SIRVE = /^(ss\.?hh|dep[oó]sito|cocina|oficina|administraci|direcci|rec
  * Elige solo los lugares para los equipos: los que algún equipo pide por nombre (cambiando de nivel si hace
  * falta) y, si no alcanzan, va sumando los más cercanos hasta que entren todos. Devuelve los que agregó.
  */
-async function elegirLugares(equipos, tipo, porMesa) {
+async function elegirLugares(equipos, tipo, porMesa, sumar = false) {
+  // Si ya elegiste lugares, se respetan: no se agrega ninguno por cuenta propia (salvo que lo pidas con el botón).
+  if (lugares().length && !sumar) return [];
   const p = proyecto(), agregados = [], pedidos = [...new Set(equipos.map(q => q.lugar).filter(Boolean).map(sinAc))];
   const tiene = (niv, t) => espaciosDe(niv, p).find(e => sinAc(e.nombre).includes(t));
   // si lo pedido está en otro nivel y acá todavía no hay nada elegido, se pasa a ese nivel
@@ -257,12 +259,12 @@ async function elegirLugares(equipos, tipo, porMesa) {
     const niv = await cargarNivel(info);
     if (pedidos.some(t => tiene(niv, t))) { p.nivel = info.id; await fijarNivel(info.id); break; }
   }
-  const sumar = e => { if (!p.espacios.includes(e.id)) { p.espacios.push(e.id); agregados.push(e.nombre); } };
-  for (const t of pedidos) { const e = tiene(nivel, t); if (e) sumar(e); }
+  const agregar = e => { if (!p.espacios.includes(e.id)) { p.espacios.push(e.id); agregados.push(e.nombre); } };
+  for (const t of pedidos) { const e = tiene(nivel, t); if (e) agregar(e); }
   const posibles = () => espaciosDe(nivel, p).filter(e => !p.espacios.includes(e.id) && !e.auto && e.area >= 18 && !NO_SIRVE.test(e.nombre));
   // sin nada elegido: se parte del salón o hall techado más grande (si no hay, de un patio)
   const techado = e => !e.exterior && !e.propio, util = /hall|sal[oó]n|antesala|mandala|comedor|auditorio|gimnasio|biblioteca|galer/i;
-  if (!lugares().length) { const o = posibles().sort((a, b) => b.area - a.area), e = o.find(x => techado(x) && util.test(x.nombre)) || o.find(techado) || o[0]; if (e) sumar(e); }
+  if (!lugares().length) { const o = posibles().sort((a, b) => b.area - a.area), e = o.find(x => techado(x) && util.test(x.nombre)) || o.find(techado) || o[0]; if (e) agregar(e); }
   for (let k = 0; k < 10 && lugares().length; k++) {
     const r = await distribuir(nivel, p, equipos, tipo, porMesa, null);
     if (!r.sinLugar.length) break;
@@ -270,21 +272,22 @@ async function elegirLugares(equipos, tipo, porMesa) {
     // se suman los más cercanos: primero halls y salones, después aulas, y los patios al final
     const orden = e => (techado(e) ? 0 : 2) + (/^aula/i.test(e.nombre) ? 1 : 0);
     const e = posibles().sort((a, b) => orden(a) - orden(b) || dist(a) - dist(b))[0];
-    if (!e) break; sumar(e);
+    if (!e) break; agregar(e);
   }
   if (agregados.length) avisar('espacios');
   return agregados;
 }
-async function distribuirEquipos() {
+async function distribuirEquipos(sumarLugares = false) {
   guardarEquipos();
   const l = contarEquipos(), p = proyecto();
   if (!l.length) return aviso('Escribí al menos un equipo, uno por renglón.');
   const tipoEq = E.catalogo().find(t => t.id === $('eqTipo').value), porMesa = num($('eqPorMesa').value, 0, 40, 4);
   aviso('Buscando lugar para los equipos…'); await new Promise(f => setTimeout(f, 30));
-  const elegidos = await elegirLugares(l, tipoEq, porMesa);
+  const habia = lugares().map(e => e.nombre);
+  const elegidos = await elegirLugares(l, tipoEq, porMesa, sumarLugares === true);
   if (!lugares().length) return aviso('No encontré lugares donde ubicar los equipos en este nivel. Elegí alguno a mano en el paso 2.');
   const previos = p.items.filter(i => i.equipo && i.nivel === nivel.id).length;
-  if (previos && !await confirmar(`Ya hay ${previos} puestos de equipos ubicados. ¿Los reemplazo por una distribución nueva?`, 'Reemplazar')) return;
+  if (previos && sumarLugares !== true && !await confirmar(`Ya hay ${previos} puestos de equipos ubicados. ¿Los reemplazo por una distribución nueva?`, 'Reemplazar')) return;
   aviso('Preparando las distribuciones…'); $('btnDistribuir').disabled = true; await new Promise(f => setTimeout(f, 30));
   // Para elegir la mejor ubicación se simula la visita con cada alternativa. Hace falta una entrada: la marcada o,
   // en planta baja, el punto por donde se llega al lugar caminando desde el portón.
@@ -316,7 +319,8 @@ async function distribuirEquipos() {
   if (ench.length) r.resumen += ` Piden enchufe cerca: ${ench.join(', ')}; el plano no indica dónde hay enchufes, así que eso revisalo en el lugar.`;
   if (sinPedido.length) r.resumen += ` No encontré en el plano el lugar pedido por: ${sinPedido.join(', ')}. Buscalo en la lista de lugares, ponele ese nombre con el lápiz y volvé a distribuir.`;
   $('eqResultado').innerHTML = `<b>${r.items.length} de ${l.length} equipos ubicados${r.mesas > r.items.length ? `, con ${r.mesas} mesas` : ''}.</b> ${esc(r.resumen)}` +
-    (r.sinLugar.length ? ` <span class="alerta">No entraron: ${esc(r.sinLugar.map(e => e.nombre).join(', '))}. Elegí más lugares o un mueble más chico.</span>` : '');
+    (r.sinLugar.length ? ` <span class="alerta">No entraron: ${esc(r.sinLugar.map(e => e.nombre).join(', '))}.</span> ${habia.length ? `Usé solo los lugares que elegiste (${esc(habia.join(', '))}). Podés elegir más en el paso 2, usar un mueble más chico, o <button id="btnSumarLugares">dejar que el sistema sume lugares cercanos</button>` : 'Elegí más lugares o un mueble más chico.'}` : '');
+  const bs = $('btnSumarLugares'); if (bs) bs.onclick = () => distribuirEquipos(true);
   $('btnDistribuir').disabled = false; if (vistaSim) simCrear();
   aviso(`${r.items.length} equipos ubicados.`);
 }
@@ -1035,7 +1039,7 @@ function conectar() {
   };
   $('chkTodoPanel').onchange = () => irEtapa(etapa(), false);
   $('eqTexto').oninput = () => { contarEquipos(); }; $('eqTexto').onchange = $('eqTipo').onchange = $('eqPorDef').onchange = $('eqPorMesa').onchange = guardarEquipos;
-  $('btnDistribuir').onclick = distribuirEquipos;
+  $('btnDistribuir').onclick = () => distribuirEquipos();
   $('eqLista').onclick = e => {
     const f = e.target.closest('.eq'); if (!f) return;
     if (e.target.dataset.a === 'quitar') { const m = mesaDe(f.dataset.eq); if (m) { marcar(); quitarEquipo(m); avisar('items'); } return; }
