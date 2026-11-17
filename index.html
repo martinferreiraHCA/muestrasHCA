@@ -79,6 +79,20 @@
       <p id="eqResultado" class="ayuda" style="margin-top:8px"></p>
     </section>
 
+    <section data-en="muebles">
+      <h2>Armar el salón solo</h2>
+      <p class="ayuda">Acomoda sillas y mesas automáticamente en un lugar: auditorio, anfiteatro, aula, U, mesas redondas o ronda. Si volvés a armar, reemplaza lo que había armado antes en ese lugar.</p>
+      <label>Lugar<select id="saLugar"></select></label>
+      <label>Forma<select id="saForma"></select></label>
+      <div class="fila2">
+        <label>Personas<input id="saPersonas" type="number" min="1" max="1500" value="60"></label>
+        <label>El frente está<select id="saFrente"><option value="arriba">Arriba</option><option value="abajo">Abajo</option><option value="izquierda">A la izquierda</option><option value="derecha">A la derecha</option></select></label>
+      </div>
+      <label class="check"><input id="saEscenario" type="checkbox"> Poner un escenario al frente</label>
+      <div class="botones"><button id="btnArmarSala" class="primario">Armar</button><button id="btnQuitarSala">Quitar lo armado</button></div>
+      <p id="saResultado" class="ayuda" style="margin-top:8px"></p>
+    </section>
+
     <section data-en="muebles,recorrido">
       <h2>Elementos</h2>
       <p class="ayuda">Tocá un elemento para agregarlo, o arrastralo al plano.</p>

@@ -4,6 +4,8 @@ import { proyecto, marcar, avisar, uid } from './estado.js';
 import { cargarIndice, cargarNivel as cargarCrudo, nivelVisible, edificiosOcultos, espaciosDe, espaciosElegidos, geo } from './niveles.js';
 import * as SOL from './sol.js';
 import { leerEquipos, distribuir } from './equipos.js';
+import { armarSala, FORMAS } from './asientos.js';
+import { iniciarAyuda } from './ayuda.js';
 import { generarFolleto, aPNG, TEMAS, FORMATOS, FOLLETO_DEF } from './folleto.js';
 import * as P from './plano.js';
 import { ui } from './plano.js';
@@ -116,7 +118,7 @@ const ETAPAS = [
   { id: 'equipos', t: 'Equipos', titulo: 'Cargar los equipos', vista: 'plano', herr: 'mover',
     ayuda: 'Escribí los equipos, uno por renglón, y apretá «Distribuir»: el sistema ubica un puesto por equipo en los lugares elegidos, dejando libre la circulación. Si no tenés equipos, seguí al paso siguiente.' },
   { id: 'muebles', t: 'Muebles', titulo: 'Distribuir los muebles', vista: 'plano', herr: 'mover',
-    ayuda: 'Ajustá la distribución: tocá un elemento de la lista para agregarlo y arrastralo a su lugar. Con uno seleccionado, a la derecha podés cambiarle el nombre, los estudiantes y repetirlo en filas.' },
+    ayuda: 'Podés armar el salón solo (auditorio, anfiteatro, aula…) con el panel de la izquierda, o a mano: tocá un elemento de la lista para agregarlo y arrastralo a su lugar. Con uno seleccionado, a la derecha podés cambiarle el nombre, los estudiantes y repetirlo en filas.' },
   { id: 'recorrido', t: 'Recorrido', titulo: 'Entrada, salida y circulación', vista: 'sim', herr: 'mover',
     ayuda: 'Marcá por dónde entra y por dónde sale la gente y apretá «Simular» para ver cómo circula y dónde se junta.' },
   { id: 'sol', t: 'Sol', titulo: 'Sol y sombras', vista: 'sol', herr: 'mover',
@@ -147,6 +149,7 @@ async function irEtapa(n, mover = true) {
   }
   if (n === 1) $('detEdificios').open = true;
   if (e.id === 'equipos') pintarEquipos();
+  if (e.id === 'muebles') pintarSala();
   pintarGuia();
 }
 function pintarGuia() {
@@ -201,6 +204,31 @@ async function distribuirEquipos() {
   $('eqResultado').innerHTML = `<b>${r.items.length} de ${l.length} equipos ubicados${r.mesas > r.items.length ? `, con ${r.mesas} mesas` : ''}.</b> ${esc(r.resumen)}` +
     (r.sinLugar.length ? ` <span class="alerta">No entraron: ${esc(r.sinLugar.map(e => e.nombre).join(', '))}. Elegí más lugares o un mueble más chico.</span>` : '');
   aviso(`${r.items.length} equipos ubicados.`);
+}
+
+// ---------- armado automático de un salón ----------
+function pintarSala() {
+  const l = lugares(), q = proyecto().sala || {};
+  $('saLugar').innerHTML = l.map((e, i) => `<option value="${e.id}" ${(lugar >= 0 ? i === lugar : e.id === q.lugar) ? 'selected' : ''}>${esc(e.nombre)} (${Math.round(e.area)} m²)</option>`).join('');
+  if (!$('saForma').options.length) $('saForma').innerHTML = Object.entries(FORMAS).map(([k, t]) => `<option value="${k}">${t}</option>`).join('');
+  if (q.forma) { $('saForma').value = q.forma; $('saPersonas').value = q.personas; $('saFrente').value = q.frente; $('saEscenario').checked = !!q.escenario; }
+}
+const enLugar = (id, it) => { const e = lugares().find(x => x.id === id); return e && puntoEnPoligono(it.x, it.y, e.poly); };
+function armarSalaAhora() {
+  const p = proyecto(), e = lugares().find(x => x.id === $('saLugar').value);
+  if (!e) return aviso('Primero elegí un lugar.');
+  const op = { forma: $('saForma').value, personas: num($('saPersonas').value, 1, 1500, 60) | 0, frente: $('saFrente').value, escenario: $('saEscenario').checked };
+  const r = armarSala(nivel, p, e, id => E.catalogo().find(t => t.id === id), op);
+  marcar(); p.sala = { ...op, lugar: e.id };
+  p.items = [...p.items.filter(i => !(i.auto === 'sala' && i.nivel === nivel.id && puntoEnPoligono(i.x, i.y, e.poly))), ...r.items];
+  ui.seleccion.clear(); avisar('items'); P.centrarEn(e.poly);
+  $('saResultado').innerHTML = r.lugares >= r.pedidas ? `<b>${r.lugares} lugares armados</b> en ${esc(e.nombre)}.`
+    : `<b>Entraron ${r.lugares} de ${r.pedidas}.</b> <span class="alerta">En ${esc(e.nombre)} no hay lugar para más con esta forma. Probá otra forma, otro frente o un lugar más grande.</span>`;
+}
+function quitarSala() {
+  const p = proyecto(), id = $('saLugar').value, n = p.items.filter(i => i.auto === 'sala' && i.nivel === nivel.id && enLugar(id, i)).length;
+  if (!n) return aviso('No hay nada armado automáticamente en ese lugar.');
+  marcar(); p.items = p.items.filter(i => !(i.auto === 'sala' && i.nivel === nivel.id && enLugar(id, i))); avisar('items'); $('saResultado').textContent = '';
 }
 
 // ---------- folleto: mapa «cómo llegar» ----------
@@ -804,11 +832,12 @@ function conectar() {
     const b = e.target.closest('[data-l]'); if (!b) return clicEtapa(e);
     const l = lugares().length;
     lugar = b.dataset.l === 'todos' ? -1 : b.dataset.l === 'next' ? (lugar + 1) % l : (lugar <= 0 ? l - 1 : lugar - 1);
-    enfocarLugar(); pintarGuia();
+    enfocarLugar(); pintarGuia(); pintarSala();
   };
   $('chkTodoPanel').onchange = () => irEtapa(etapa(), false);
   $('eqTexto').oninput = () => { contarEquipos(); }; $('eqTexto').onchange = $('eqTipo').onchange = $('eqPorDef').onchange = $('eqPorMesa').onchange = guardarEquipos;
   $('btnDistribuir').onclick = distribuirEquipos;
+  $('btnArmarSala').onclick = armarSalaAhora; $('btnQuitarSala').onclick = quitarSala;
   $('btnPDF2').onclick = () => exportarPDF();
   $('btn3D').onclick = () => ver('iso'); $('btnVolverPlanta').onclick = () => ver('plano');
   $('listaEdificios').onchange = e => {
@@ -898,7 +927,7 @@ function conectar() {
 // ---------- arranque ----------
 let tIso;
 async function arrancar() {
-  E.cargar();
+  E.cargar(); iniciarAyuda();
   ui.alSeleccionar = pintarPanel; ui.pedirNombre = pedirNombre; ui.pista = t => { $('pista').textContent = t || ''; };
   P.iniciar($('plano'));
   conectar();

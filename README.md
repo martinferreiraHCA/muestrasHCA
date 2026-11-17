@@ -9,6 +9,10 @@ las ubicaciones.
 - **Guía por etapas**: el armado va paso a paso (Datos → Lugares → Equipos → Muebles → Recorrido →
   Sol → Folleto y PDF). Cada paso muestra solo lo que hace falta, dice qué falta y acerca la
   vista a los lugares elegidos.
+- **Armar el salón solo**: distribuye sillas y mesas automáticamente en un lugar para una cantidad
+  de personas: auditorio (filas con pasillo), anfiteatro (filas curvas), aula, mesas en U, mesas
+  redondas o ronda; con el frente hacia el lado que se elija y escenario opcional.
+- **Ayudas «?»**: al lado de cada dato hay un botón que explica qué es, con un ejemplo.
 - **Equipos en texto plano**: se escribe un equipo por renglón (`nombre ; estudiantes ; lugar`)
   y el sistema ubica un puesto por equipo contra las paredes de los lugares elegidos, separados
   lo más posible y con el centro libre (en islas solo si no queda pared). Cada puesto reserva

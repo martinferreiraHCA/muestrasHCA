@@ -165,3 +165,7 @@ details#detEdificios small { color: var(--suave); display: block; }
 
 h3.sub { font-size: 12px; margin: 12px 0 4px; color: var(--texto); display: flex; align-items: center; gap: 6px; }
 h3.sub .punto { width: 11px; height: 11px; border-radius: 50%; background: #15aabf; border: 2px solid #fff; box-shadow: 0 0 0 1px #0b7285; }
+button.q { width: 15px; height: 15px; padding: 0; margin: 0 0 0 4px; border-radius: 50%; border: 1px solid #b8c0cc; background: #fff; color: var(--acento); font-size: 10px; font-weight: 700; line-height: 13px; vertical-align: middle; flex-shrink: 0; display: inline-block; }
+button.q:hover { background: var(--acento); color: #fff; border-color: var(--acento); }
+.globo { position: fixed; z-index: 80; width: 280px; background: #1c2430; color: #fff; border-radius: 9px; padding: 10px 12px; font-size: 12.5px; line-height: 1.45; box-shadow: 0 8px 28px rgba(0,0,0,.3); display: none; }
+.globo p { margin: 0; } .globo .ej { margin-top: 7px; padding-top: 7px; border-top: 1px solid rgba(255,255,255,.2); color: #dbe4f0; }
