@@ -27,9 +27,19 @@ export function armarSala(nivel, proy, esp, cat, op = {}) {
   const ctx = { G, zonas, pasillos, base };
   // Con «llenar», se prueban varios corrimientos de las filas y se deja el que más lugares da.
   const fases = op.llenar && ['auditorio', 'aula'].includes(op.forma) ? [0, 0.14, 0.28, 0.41].flatMap(du => [0, 0.32, 0.64].map(ds => [du, ds])) : [[0, 0]];
-  let mejor = null;
-  for (const [du, ds] of fases) { const r = construir(nivel, esp, cat, { ...op, personas: op.llenar ? 5000 : op.personas }, ctx, du, ds); if (!mejor || r.lugares > mejor.lugares) mejor = r; }
-  return { ...mejor, pedidas: op.llenar ? mejor.lugares : op.personas, pasillos: pasillos.length };
+  const mejorDe = (frente, personas) => { let m = null; for (const [du, ds] of fases) { const r = construir(nivel, esp, cat, { ...op, frente, personas }, ctx, du, ds); if (!m || r.lugares > m.lugares) m = r; } return m; };
+  // Frente automático: se prueban los cuatro lados. Gana el que da más lugares; a igualdad, el que deja a la
+  // gente más cerca del escenario y tiene el escenario bien ubicado.
+  const pedidas = op.llenar ? 5000 : op.personas;
+  const candidatos = (op.frente === 'auto' || !FRENTES[op.frente] ? Object.keys(FRENTES) : [op.frente]).map(fr => {
+    const r = mejorDe(fr, pedidas), sillas = r.items.filter(i => i.tipo === 'silla');
+    const lejos = sillas.length ? sillas.reduce((a, i) => a + Math.hypot(i.x - r.foco[0], i.y - r.foco[1]), 0) / sillas.length : 99;
+    const cap = op.llenar ? r.lugares : mejorDe(fr, 5000).lugares;             // cuánto entraría como máximo con ese frente
+    return { ...r, frente: fr, cap, nota: r.lugares * 100 + Math.min(cap, pedidas * 1.3) * 0.3 - lejos * 8 - (op.escenario && !r.conEscenario ? 300 : 0) };
+  });
+  const mejor = candidatos.reduce((a, b) => b.nota > a.nota ? b : a);
+  const capacidad = mejor.cap;
+  return { ...mejor, pedidas: op.llenar ? mejor.lugares : op.personas, pasillos: pasillos.length, capacidad, automatico: candidatos.length > 1 };
 }
 
 function construir(nivel, esp, cat, { forma = 'auditorio', personas = 50, frente = 'arriba', escenario = false }, { G, zonas, pasillos, base }, du, ds) {
@@ -40,24 +50,34 @@ function construir(nivel, esp, cat, { forma = 'auditorio', personas = 50, frente
   // si hay pasillos dibujados, mandan ellos: no se agrega el pasillo central automático
   const PAS = pasillos.length ? 0 : PASILLO;
   const pu = esp.poly.map(q => q[0] * u[0] + q[1] * u[1]), pf = esp.poly.map(q => q[0] * f[0] + q[1] * f[1]);
-  const u0 = Math.min(...pu), u1 = Math.max(...pu), vmax = Math.max(...pf), fondo = vmax - Math.min(...pf), uc = (u0 + u1) / 2, ancho = u1 - u0;
+  const u0 = Math.min(...pu), u1 = Math.max(...pu), vmax = Math.max(...pf), fondo = vmax - Math.min(...pf), ancho = u1 - u0; let uc = (u0 + u1) / 2;
   const P = (uu, s) => [u[0] * uu + f[0] * (vmax - s), u[1] * uu + f[1] * (vmax - s)];       // (a lo ancho, distancia al frente) -> plano
   const giro = (dx, dy) => ((Math.atan2(-dx, dy) * 180 / Math.PI) % 360 + 360) % 360;          // para que el mueble mire hacia (dx, dy)
-  const items = []; let lugares = 0;
+  const items = []; let lugares = 0, conEscenario = false, anchoEsc = 0;
   const cabe = (x, y, r) => [[0, 0], [r, 0], [-r, 0], [0, r], [0, -r]].every(([a, b]) => libre(x + a, y + b));
   const poner = (id, x, y, rot, extra) => { const it = itemDesdeTipo(cat(id), Math.round(x * 100) / 100, Math.round(y * 100) / 100, nivel.id); Object.assign(it, { rot: Math.round(rot), auto: 'sala', parada: false }, extra); items.push(it); return it; };
   const silla = (x, y, dx, dy) => { if (lugares >= personas || !cabe(x, y, 0.2)) return false; poner('silla', x, y, giro(dx, dy)); lugares++; return true; };
 
   let s0 = 2.2 + ds;
   if (escenario && forma !== 'ronda') {
-    const w = Math.max(2, Math.min(5, ancho * 0.5)), [x, y] = P(uc, 1.4);
-    if (cabe(x, y, 0.8)) { poner('tarima', x, y, giro(-f[0], -f[1]), { w, d: 2, etiqueta: 'Escenario' }); s0 = 3.6; }
+    const w = Math.max(2, Math.min(5, ancho * 0.5));
+    // contra la pared del frente, centrado; si ahí hay una puerta o algo, se corre hacia un costado
+    for (const off of [0, 1, -1, 2, -2, 3, -3]) {
+      const [x, y] = P(uc + off, 1.4); if (Math.abs(off) > ancho / 2 - w / 2 || !cabe(x, y, 0.9) || ![-1, 1].every(k => libre(...P(uc + off + k * (w / 2 - 0.2), 1.4)))) continue;
+      poner('tarima', x, y, giro(-f[0], -f[1]), { w, d: 2, etiqueta: 'Escenario' }); s0 = 3.6 + ds; conEscenario = true; anchoEsc = w; uc += off; break;
+    }
   }
+  const foco = P(uc, conEscenario ? 1.4 : 0.6);
+  // las sillas miran hacia el escenario: las del centro derecho, las de los costados apenas giradas hacia él
+  const hacia = (x, y) => { const dx = foco[0] - x, dy = foco[1] - y, l = Math.hypot(dx, dy) || 1; return [f[0] * 0.75 + dx / l * 0.25, f[1] * 0.75 + dy / l * 0.25]; };
   const mitad = ancho / 2 - 0.5;
 
   if (forma === 'auditorio') {
-    for (let s = s0; s < fondo - 0.4 && lugares < personas; s += FILA)
-      for (let d = PAS / 2 + PASO / 2; d < mitad + 0.3 && lugares < personas; d += PASO) for (const lado of [-1, 1]) { const [x, y] = P(uc + du + lado * d, s); silla(x, y, f[0], f[1]); }
+    // filas completas desde adelante; las filas impares van corridas media silla para ver entre las cabezas
+    // con escenario y una cantidad pedida, las filas no se abren mucho más que el escenario: desde los costados se ve mal
+    const medio = conEscenario && personas < 5000 ? Math.max(3.5, anchoEsc * 1.3) : Infinity;
+    for (let s = s0, fila = 0; s < fondo - 0.4 && lugares < personas; s += FILA, fila++)
+      for (let d = PAS / 2 + PASO / 2 + (fila % 2 ? PASO / 2 : 0); d < Math.min(medio, Math.max(u1 - uc, uc - u0)) && lugares < personas; d += PASO) for (const lado of [-1, 1]) { const [x, y] = P(uc + du + lado * d, s); silla(x, y, ...hacia(x, y)); }
   } else if (forma === 'anfiteatro') {
     const [cx, cy] = P(uc, Math.max(1, s0 - 1.6));                 // el punto al que miran todos
     for (let r = 2.6; r < fondo + ancho && lugares < personas; r += 1.0) {
@@ -98,5 +118,5 @@ function construir(nivel, esp, cat, { forma = 'auditorio', personas = 50, frente
       if (mesa(uc + lado * (half - 0.3), s, false)) for (const o of [-0.3, 0.3]) { const [x, y] = P(uc + lado * (half + 0.25), s + o); silla(x, y, -lado * u[0], -lado * u[1]); }
     }
   }
-  return { items, lugares };
+  return { items, lugares, foco, conEscenario };
 }

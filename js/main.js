@@ -267,28 +267,51 @@ async function distribuirEquipos() {
 }
 
 // ---------- armado automático de un salón ----------
+const SALA_DEF = { forma: 'auditorio', personas: 60, frente: 'auto', escenario: true, llenar: false };
+const NOMBRE_FRENTE = { arriba: 'arriba', abajo: 'abajo', izquierda: 'la izquierda', derecha: 'la derecha' };
+const confSala = id => ({ ...SALA_DEF, ...(proyecto().salas?.[id] || {}) });
+/** Muestra en el formulario la configuración guardada del lugar elegido. */
+function cargarSala() {
+  const q = confSala($('saLugar').value);
+  $('saForma').value = q.forma; $('saPersonas').value = q.personas; $('saFrente').value = q.frente; $('saEscenario').checked = !!q.escenario; $('saLlenar').checked = !!q.llenar;
+  $('saResultado').textContent = '';
+}
 function pintarSala() {
-  const l = lugares(), q = proyecto().sala || {};
-  $('saLugar').innerHTML = l.map((e, i) => `<option value="${e.id}" ${(lugar >= 0 ? i === lugar : e.id === q.lugar) ? 'selected' : ''}>${esc(e.nombre)} (${Math.round(e.area)} m²)</option>`).join('');
+  const l = lugares(), previo = $('saLugar').value;
+  $('saLugar').innerHTML = l.map((e, i) => `<option value="${e.id}" ${(lugar >= 0 ? i === lugar : e.id === previo) ? 'selected' : ''}>${esc(e.nombre)} (${Math.round(e.area)} m²)</option>`).join('');
   if (!$('saForma').options.length) $('saForma').innerHTML = Object.entries(FORMAS).map(([k, t]) => `<option value="${k}">${t}</option>`).join('');
-  if (q.forma) { $('saForma').value = q.forma; $('saPersonas').value = q.personas; $('saFrente').value = q.frente; $('saEscenario').checked = !!q.escenario; $('saLlenar').checked = !!q.llenar; }
+  cargarSala(); pintarResumenSala();
 }
 const enLugar = (id, it) => { const e = lugares().find(x => x.id === id); return e && puntoEnPoligono(it.x, it.y, e.poly); };
+/** Tabla con lo armado en cada lugar y el total. */
+function pintarResumenSala() {
+  const p = proyecto(), filas = lugares().map(e => ({ e, c: p.salas?.[e.id], n: p.items.filter(i => i.auto === 'sala' && i.tipo === 'silla' && i.nivel === nivel.id && puntoEnPoligono(i.x, i.y, e.poly)).length })).filter(f => f.c && f.n);
+  $('saResumen').innerHTML = filas.length ? `<table class="resumen" style="margin-top:8px">${filas.map(f => `<tr><td>${esc(f.e.nombre)}<br><small>${esc(FORMAS[f.c.forma].split(':')[0])}${f.c.capacidad ? ` · entran hasta ${f.c.capacidad}` : ''}</small></td><td>${f.n}</td></tr>`).join('')}
+    <tr><td><b>Total de lugares</b></td><td><b>${filas.reduce((a, f) => a + f.n, 0)}</b></td></tr></table>${lugares().length > 1 ? '<button id="btnArmarTodas" class="ancho">Volver a armar todos los lugares</button>' : ''}` : '';
+  const b = $('btnArmarTodas'); if (b) b.onclick = () => { marcar(); filas.forEach(f => armarUna(f.e, f.c)); avisar('items'); P.encuadrar(); aviso('Lugares rearmados.'); };
+}
+/** Arma un lugar con su configuración y la guarda. No avisa ni marca: eso lo hace quien llama. */
+function armarUna(e, op) {
+  const p = proyecto(), r = armarSala(nivel, p, e, id => E.catalogo().find(t => t.id === id), op);
+  p.salas = { ...(p.salas || {}), [e.id]: { ...op, capacidad: r.capacidad, frenteUsado: r.frente } };
+  p.items = [...p.items.filter(i => !(i.auto === 'sala' && i.nivel === nivel.id && puntoEnPoligono(i.x, i.y, e.poly))), ...r.items];
+  return r;
+}
 function armarSalaAhora() {
-  const p = proyecto(), e = lugares().find(x => x.id === $('saLugar').value);
+  const e = lugares().find(x => x.id === $('saLugar').value);
   if (!e) return aviso('Primero elegí un lugar.');
   const op = { forma: $('saForma').value, personas: num($('saPersonas').value, 1, 1500, 60) | 0, frente: $('saFrente').value, escenario: $('saEscenario').checked, llenar: $('saLlenar').checked };
-  const r = armarSala(nivel, p, e, id => E.catalogo().find(t => t.id === id), op);
-  marcar(); p.sala = { ...op, lugar: e.id };
-  p.items = [...p.items.filter(i => !(i.auto === 'sala' && i.nivel === nivel.id && puntoEnPoligono(i.x, i.y, e.poly))), ...r.items];
+  marcar(); const r = armarUna(e, op);
   ui.seleccion.clear(); avisar('items'); P.centrarEn(e.poly);
-  $('saResultado').innerHTML = r.lugares >= r.pedidas ? `<b>${r.lugares} lugares armados</b> en ${esc(e.nombre)}${op.llenar ? ', el máximo que encontré con esta forma' : ''}${r.pasillos ? `, respetando ${r.pasillos} pasillo${r.pasillos > 1 ? 's' : ''} o zona${r.pasillos > 1 ? 's' : ''} libre${r.pasillos > 1 ? 's' : ''}` : ''}.`
-    : `<b>Entraron ${r.lugares} de ${r.pedidas}.</b> <span class="alerta">En ${esc(e.nombre)} no hay lugar para más con esta forma. Probá otra forma, otro frente o un lugar más grande.</span>`;
+  const extra = `${r.automatico ? ` Elegí el frente hacia ${NOMBRE_FRENTE[r.frente]}, que es el que mejor rinde.` : ''}${op.escenario && op.forma !== 'ronda' && !r.conEscenario ? ' No encontré lugar para el escenario contra esa pared.' : ''}${r.pasillos ? ` Respeté ${r.pasillos} pasillo${r.pasillos > 1 ? 's' : ''} o zona${r.pasillos > 1 ? 's' : ''} libre${r.pasillos > 1 ? 's' : ''}.` : ''}`;
+  $('saResultado').innerHTML = r.lugares >= r.pedidas
+    ? `<b>${r.lugares} lugares armados</b> en ${esc(e.nombre)}${op.llenar ? ', el máximo que encontré' : `; con esta forma entran hasta ${r.capacidad}`}.${extra}`
+    : `<b>Entraron ${r.lugares} de ${r.pedidas}.</b> <span class="alerta">En ${esc(e.nombre)} no hay lugar para más con esta forma.</span>${extra}`;
 }
 function quitarSala() {
   const p = proyecto(), id = $('saLugar').value, n = p.items.filter(i => i.auto === 'sala' && i.nivel === nivel.id && enLugar(id, i)).length;
   if (!n) return aviso('No hay nada armado automáticamente en ese lugar.');
-  marcar(); p.items = p.items.filter(i => !(i.auto === 'sala' && i.nivel === nivel.id && enLugar(id, i))); avisar('items'); $('saResultado').textContent = '';
+  marcar(); p.items = p.items.filter(i => !(i.auto === 'sala' && i.nivel === nivel.id && enLugar(id, i))); if (p.salas) delete p.salas[id]; avisar('items'); $('saResultado').textContent = '';
 }
 
 // ---------- folleto: mapa «cómo llegar» ----------
@@ -937,6 +960,7 @@ function conectar() {
   $('eqTexto').oninput = () => { contarEquipos(); }; $('eqTexto').onchange = $('eqTipo').onchange = $('eqPorDef').onchange = $('eqPorMesa').onchange = guardarEquipos;
   $('btnDistribuir').onclick = distribuirEquipos;
   $('btnPasillo').onclick = () => ui.alHerramienta('pasillo');
+  $('saLugar').onchange = () => { cargarSala(); const e = lugares().find(x => x.id === $('saLugar').value); if (e) P.centrarEn(e.poly); };
   $('btnArmarSala').onclick = armarSalaAhora; $('btnQuitarSala').onclick = quitarSala;
   $('btnPDF2').onclick = () => exportarPDF();
   $('btn3D').onclick = () => ver('iso'); $('btnVolverPlanta').onclick = () => ver('plano');
@@ -1038,6 +1062,7 @@ async function arrancar() {
     if (crudo) { const f = nivelVisible(crudo, proyecto()); if (f !== nivel) { nivel = f; ui.nivel = f; solTabla = null; } }
     pintarBarra(); solCache = null; pintarGuia();
     if (ui.zonas && nivel) ui.zonas = zonasLibres(nivel, P.itemsNivel());
+    if (nivel && ETAPAS[etapa() - 1].id === 'muebles') pintarResumenSala();
     if (vistaFol) { pintarFolleto(); if (que === 'folleto') return; }
     if (que !== 'nombre' && que !== 'sol' && que !== 'etapa' && sim) { sim = null; simComp = null; simPausar(); if (vistaSim) simCrear(); }
     if (que !== 'items' && que !== 'nombre') pintarEspacios();

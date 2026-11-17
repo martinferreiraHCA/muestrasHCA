@@ -20,9 +20,10 @@ las ubicaciones.
   Integrantes, Necesidad). Cuenta los integrantes, saca los pedidos (un lugar con nombre, pared,
   lugar libre adelante, enchufe) y pinta cada grupo de un color. Si no hay lugares elegidos, los
   elige el sistema y va sumando los más cercanos hasta que entren todos.
-- **Armar el salón solo**: distribuye sillas y mesas automáticamente en un lugar para una cantidad
-  de personas: auditorio (filas con pasillo), anfiteatro (filas curvas), aula, mesas en U, mesas
-  redondas o ronda; con el frente hacia el lado que se elija y escenario opcional.
+- **Armar el salón solo**: por cada lugar se elige la forma (auditorio, anfiteatro, aula, mesas en U,
+  mesas redondas o ronda) y la cantidad de personas; cada lugar guarda su configuración y hay un
+  resumen con el total. El frente puede ser automático: prueba los cuatro lados y deja el que más
+  rinde. Las sillas miran al escenario y las filas van intercaladas.
 - **Ayudas «?»**: al lado de cada dato hay un botón que explica qué es, con un ejemplo.
 - **Equipos en texto plano**: se escribe un equipo por renglón (`nombre ; estudiantes ; lugar`)
   y el sistema ubica un puesto por equipo contra las paredes de los lugares elegidos, separados

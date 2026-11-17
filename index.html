@@ -81,18 +81,19 @@
 
     <section data-en="muebles">
       <h2>Armar el salón solo</h2>
-      <p class="ayuda">Acomoda sillas y mesas automáticamente en un lugar: auditorio, anfiteatro, aula, U, mesas redondas o ronda. Si antes dibujás <b>pasillos o zonas libres</b>, los respeta y llena el resto. Si volvés a armar, reemplaza lo que había armado antes en ese lugar.</p>
+      <p class="ayuda">Elegí un lugar y cuánta gente va en él; el sistema acomoda sillas y mesas mirando al escenario. Cada lugar guarda su propia configuración. Formas: auditorio, anfiteatro, aula, U, mesas redondas o ronda. Si antes dibujás <b>pasillos o zonas libres</b>, los respeta y llena el resto. Si volvés a armar, reemplaza lo que había armado antes en ese lugar.</p>
       <label>Lugar<select id="saLugar"></select></label>
       <label>Forma<select id="saForma"></select></label>
       <div class="fila2">
         <label>Personas<input id="saPersonas" type="number" min="1" max="1500" value="60"></label>
-        <label>El frente está<select id="saFrente"><option value="arriba">Arriba</option><option value="abajo">Abajo</option><option value="izquierda">A la izquierda</option><option value="derecha">A la derecha</option></select></label>
+        <label>El frente está<select id="saFrente"><option value="auto">Automático (el mejor)</option><option value="arriba">Arriba</option><option value="abajo">Abajo</option><option value="izquierda">A la izquierda</option><option value="derecha">A la derecha</option></select></label>
       </div>
-      <label class="check"><input id="saEscenario" type="checkbox"> Poner un escenario al frente</label>
+      <label class="check"><input id="saEscenario" type="checkbox" checked> Poner un escenario al frente</label>
       <label class="check"><input id="saLlenar" type="checkbox"> Llenar todo el lugar (la mayor cantidad posible)</label>
       <button id="btnPasillo" class="ancho" style="margin:2px 0 8px" title="Arrastrá en el plano las franjas que tienen que quedar libres">✎ Dibujar pasillos o zonas libres</button>
-      <div class="botones"><button id="btnArmarSala" class="primario">Armar</button><button id="btnQuitarSala">Quitar lo armado</button></div>
+      <div class="botones"><button id="btnArmarSala" class="primario">Armar este lugar</button><button id="btnQuitarSala">Quitar lo armado</button></div>
       <p id="saResultado" class="ayuda" style="margin-top:8px"></p>
+      <div id="saResumen"></div>
     </section>
 
     <section data-en="muebles,recorrido">
