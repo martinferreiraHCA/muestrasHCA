@@ -3,7 +3,7 @@ import * as E from './estado.js';
 import { proyecto, marcar, avisar, uid } from './estado.js';
 import { cargarIndice, cargarNivel as cargarCrudo, nivelVisible, edificiosOcultos, zonasLibres, espaciosDe, espaciosElegidos, geo } from './niveles.js';
 import * as SOL from './sol.js';
-import { leerEquipos, distribuir } from './equipos.js';
+import { leerEquipos, distribuir, colorEquipo } from './equipos.js';
 import { armarSala, FORMAS } from './asientos.js';
 import { iniciarAyuda } from './ayuda.js';
 import { generarFolleto, aPNG, TEMAS, FORMATOS, FOLLETO_DEF } from './folleto.js';
@@ -183,14 +183,66 @@ function pintarEquipos() {
   $('eqTipo').innerHTML = tipos.map(t => `<option value="${t.id}" ${t.id === (q.tipo || 'stand') ? 'selected' : ''}>${esc(t.nombre)} (${t.w} × ${t.d} m)</option>`).join('');
   if (document.activeElement !== $('eqTexto')) $('eqTexto').value = q.texto || '';
   $('eqPorDef').value = q.porDef ?? 4; $('eqPorMesa').value = q.porMesa ?? 4;
-  contarEquipos();
+  contarEquipos(); pintarListaEquipos();
 }
 function contarEquipos() {
   const l = leerEquipos($('eqTexto').value, num($('eqPorDef').value, 0, 40, 4));
   $('resEquipos').textContent = l.length ? `${l.length} · ${l.reduce((a, e) => a + e.estudiantes, 0)} estudiantes` : '';
   return l;
 }
-function guardarEquipos() { proyecto().equipos = { texto: $('eqTexto').value, tipo: $('eqTipo').value, porDef: num($('eqPorDef').value, 0, 40, 4), porMesa: num($('eqPorMesa').value, 0, 40, 4) }; avisar('nombre'); pintarGuia(); }
+// ---------- asignación a mano: un equipo de la lista a una mesa que ya está puesta ----------
+let equipoActivo = null;
+const listaEquipos = () => leerEquipos(proyecto().equipos?.texto ?? $('eqTexto').value, proyecto().equipos?.porDef ?? 4);
+const mesaDe = nombre => proyecto().items.find(i => i.equipo && i.etiqueta === nombre);
+const CAMPOS_EQ = ['estudiantes', 'grupo', 'integrantes', 'necesidad', 'categoria', 'estado', 'listo', 'enchufe'];
+/** Le da a un mueble los datos de un equipo (y se los quita a la mesa donde estaba antes). */
+function asignarEquipo(it, q, lista = listaEquipos()) {
+  const antes = mesaDe(q.nombre); if (antes && antes !== it) quitarEquipo(antes);
+  if (it.equipo && it.etiqueta !== q.nombre) quitarEquipo(it);
+  it.equipo = true; it.etiqueta = q.nombre; CAMPOS_EQ.forEach(k => { if (q[k] !== undefined) it[k] = q[k]; else delete it[k]; });
+  if (it.colorPropio === undefined) it.colorPropio = it.color;
+  it.color = colorEquipo(lista, q) || it.colorPropio;
+}
+function quitarEquipo(it) {
+  delete it.equipo; it.etiqueta = ''; CAMPOS_EQ.forEach(k => delete it[k]);
+  if (it.colorPropio !== undefined) { it.color = it.colorPropio; delete it.colorPropio; }
+}
+function pintarListaEquipos() {
+  const el = $('eqLista'); if (!el) return;
+  const l = listaEquipos(), p = proyecto(); let cat = null;
+  el.innerHTML = l.length ? l.map(q => {
+    const m = mesaDe(q.nombre), niv = m && indice.find(n => n.id === m.nivel), donde = m && m.nivel === nivel.id ? lugares().find(e => puntoEnPoligono(m.x, m.y, e.poly))?.nombre || 'ubicado' : niv ? niv.nombre : '';
+    const cab = q.categoria && q.categoria !== cat ? `<div class="cat">${esc(cat = q.categoria)}</div>` : '';
+    return `${cab}<div class="eq ${equipoActivo === q.nombre ? 'activo' : ''}" data-eq="${esc(q.nombre)}" title="${esc([q.grupo, q.integrantes, q.necesidad && 'Pide: ' + q.necesidad].filter(Boolean).join(' · '))}">
+      <span class="pt" style="background:${colorEquipo(l, q) || '#c9a36b'}"></span><span class="n">${esc(q.nombre)} <small>(${q.estudiantes})</small></span>
+      ${m ? `<small class="ok">✓ ${esc(donde)}</small><button data-a="quitar" title="Quitarle la mesa">✕</button>` : '<small>sin mesa</small>'}</div>`;
+  }).join('') + `<div class="vacio">${l.filter(q => mesaDe(q.nombre)).length} de ${l.length} con mesa</div>` : '<div class="vacio">Cargá los equipos arriba para poder asignarlos.</div>';
+}
+function activarEquipo(nombre) {
+  equipoActivo = nombre;
+  if (!nombre) { if (ui.herramienta === 'asignar') ui.alHerramienta('mover'); pintarListaEquipos(); return; }
+  // si ya hay una mesa seleccionada, se le asigna directamente
+  const sel = P.seleccionados().filter(i => !['zona', 'texto', 'persona', 'silla'].includes(i.modelo)), q = listaEquipos().find(e => e.nombre === nombre);
+  if (sel.length === 1 && !sel[0].equipo) { marcar(); asignarEquipo(sel[0], q); ui.seleccion.clear(); avisar('items'); return siguienteEquipo(); }
+  ui.alHerramienta('asignar'); ui.pista(`Tocá la mesa de «${nombre}», o un lugar vacío para ponerle una mesa nueva. Esc para terminar.`); pintarListaEquipos();
+}
+/** Pasa al próximo equipo sin mesa, para asignar varios seguidos. */
+function siguienteEquipo() {
+  const l = listaEquipos(), i = l.findIndex(e => e.nombre === equipoActivo), prox = [...l.slice(i + 1), ...l.slice(0, i + 1)].find(e => !mesaDe(e.nombre));
+  activarEquipo(prox ? prox.nombre : null);
+  if (!prox) { ui.pista(''); aviso('Todos los equipos tienen mesa.'); }
+}
+function alAsignar(it, x, y) {
+  const l = listaEquipos(), q = l.find(e => e.nombre === equipoActivo); if (!q) return;
+  if (it && ['zona', 'texto', 'persona', 'silla'].includes(it.modelo)) it = null;
+  marcar();
+  if (!it) {                // lugar vacío: mesa nueva del tipo elegido en «Cada equipo usa»
+    const tipo = E.catalogo().find(t => t.id === $('eqTipo').value) || E.catalogo().find(t => t.id === 'mesa');
+    it = E.itemDesdeTipo(tipo, x, y, nivel.id); proyecto().items.push(it);
+  }
+  asignarEquipo(it, q, l); avisar('items'); siguienteEquipo();
+}
+function guardarEquipos() { equipoActivo = null; proyecto().equipos = { texto: $('eqTexto').value, tipo: $('eqTipo').value, porDef: num($('eqPorDef').value, 0, 40, 4), porMesa: num($('eqPorMesa').value, 0, 40, 4) }; avisar('nombre'); pintarGuia(); }
 const sinAc = t => t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 const NO_SIRVE = /^(ss\.?hh|dep[oó]sito|cocina|oficina|administraci|direcci|recepci|vestuario|porter|kitchenette|sala de dormir|cancha|explanada|juegos|gradas|aulas y comedor|pasaje|jard[ií]n)/i;
 /**
@@ -749,6 +801,7 @@ function pintarPanel() {
         <label>Color<input id="pColor" type="color" value="${comun('color') || '#888888'}"></label>
         <span></span>
       </div>
+      ${!varios && !['zona', 'texto', 'persona', 'silla'].includes(u.modelo) && listaEquipos().length ? `<label>Equipo asignado<select id="pEquipo"><option value="">— ninguno —</option>${listaEquipos().map(q => `<option value="${esc(q.nombre)}" ${u.equipo && u.etiqueta === q.nombre ? 'selected' : ''}>${esc(q.nombre)} (${q.estudiantes})${mesaDe(q.nombre) && mesaDe(q.nombre) !== u ? ' · ya tiene mesa' : ''}</option>`).join('')}</select></label>` : ''}
       <label class="check" title="Los visitantes de la simulación de circulación se detienen en las paradas"><input id="pParada" type="checkbox" ${sel.every(esParada) ? 'checked' : ''}> Es una parada del recorrido</label>
       <div class="botones">
         <button id="pDup">Duplicar</button><button id="pGirar">Girar 90°</button>
@@ -788,6 +841,7 @@ function pintarPanel() {
   vivo('pRot', v => { const n = num(v, -3600, 3600, null); if (n !== null) sel.forEach(i => { i.rot = ((n % 360) + 360) % 360; }); });
   vivo('pColor', v => sel.forEach(i => { i.color = v; }));
   vivo('pEst', v => { const n = num(v, 0, 40, 0); sel.forEach(i => { i.estudiantes = Math.round(n); }); });
+  if ($('pEquipo')) $('pEquipo').onchange = e => { marcar(); const q = listaEquipos().find(x => x.nombre === e.target.value); if (q) asignarEquipo(u, q); else quitarEquipo(u); avisar('items'); };
   $('pParada').onchange = e => { marcar(); sel.forEach(i => { i.parada = e.target.checked; }); avisar('items'); };
   $('pDup').onclick = duplicar; $('pBorrar').onclick = borrar; $('pGirar').onclick = () => girarSel(90);
   $('pFrente').onclick = () => { marcar(); const p = proyecto(); p.items = [...p.items.filter(i => !ui.seleccion.has(i.id)), ...sel]; avisar('items'); };
@@ -982,6 +1036,11 @@ function conectar() {
   $('chkTodoPanel').onchange = () => irEtapa(etapa(), false);
   $('eqTexto').oninput = () => { contarEquipos(); }; $('eqTexto').onchange = $('eqTipo').onchange = $('eqPorDef').onchange = $('eqPorMesa').onchange = guardarEquipos;
   $('btnDistribuir').onclick = distribuirEquipos;
+  $('eqLista').onclick = e => {
+    const f = e.target.closest('.eq'); if (!f) return;
+    if (e.target.dataset.a === 'quitar') { const m = mesaDe(f.dataset.eq); if (m) { marcar(); quitarEquipo(m); avisar('items'); } return; }
+    activarEquipo(equipoActivo === f.dataset.eq ? null : f.dataset.eq);
+  };
   $('btnPasillo').onclick = () => ui.alHerramienta('pasillo');
   $('saLugar').onchange = () => { cargarSala(); const e = lugares().find(x => x.id === $('saLugar').value); if (e) P.centrarEn(e.poly); };
   $('btnArmarSala').onclick = armarSalaAhora; $('btnQuitarSala').onclick = quitarSala;
@@ -1029,7 +1088,7 @@ function conectar() {
   $('catalogo').addEventListener('dragstart', e => { const b = e.target.closest('.tipo'); if (b) e.dataTransfer.setData('text/plain', b.dataset.id); });
   $('btnNuevoTipo').onclick = () => editarTipo(null);
 
-  const herr = h => { document.querySelectorAll('#herramientas [data-h]').forEach(b => b.classList.toggle('activo', b.dataset.h === h)); P.fijarHerramienta(h); };
+  const herr = h => { if (h !== 'asignar' && equipoActivo) { equipoActivo = null; pintarListaEquipos(); } document.querySelectorAll('#herramientas [data-h]').forEach(b => b.classList.toggle('activo', b.dataset.h === h)); P.fijarHerramienta(h); };
   ui.alHerramienta = herr;
   document.querySelectorAll('#herramientas [data-h]').forEach(b => { b.onclick = () => herr(b.dataset.h); });
   $('chkIman').onchange = e => { ui.iman = e.target.checked; };
@@ -1075,7 +1134,7 @@ function conectar() {
 let tIso;
 async function arrancar() {
   E.cargar(); iniciarAyuda();
-  ui.alMover = seguirEscenario;
+  ui.alMover = seguirEscenario; ui.alAsignar = alAsignar;
   ui.alSeleccionar = pintarPanel; ui.pedirNombre = pedirNombre; ui.pista = t => { $('pista').textContent = t || ''; };
   P.iniciar($('plano'));
   conectar();
@@ -1086,6 +1145,7 @@ async function arrancar() {
     if (crudo) { const f = nivelVisible(crudo, proyecto()); if (f !== nivel) { nivel = f; ui.nivel = f; solTabla = null; } }
     pintarBarra(); solCache = null; pintarGuia();
     if (ui.zonas && nivel) ui.zonas = zonasLibres(nivel, P.itemsNivel());
+    if (nivel) pintarListaEquipos();
     if (nivel && ETAPAS[etapa() - 1].id === 'muebles') pintarResumenSala();
     if (vistaFol) { pintarFolleto(); if (que === 'folleto') return; }
     if (que !== 'nombre' && que !== 'sol' && que !== 'etapa' && sim) { sim = null; simComp = null; simPausar(); if (vistaSim) simCrear(); }

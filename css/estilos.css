@@ -175,3 +175,11 @@ button.q:hover { background: var(--acento); color: #fff; border-color: var(--ace
 ul.sugs { margin: 4px 0 8px; padding-left: 16px; font-size: 12px; line-height: 1.45; color: #3b4453; }
 ul.sugs li { margin-bottom: 5px; } ul.sugs button { padding: 0 6px; font-size: 11px; margin-left: 2px; }
 .ayuda.ok { color: #1a7f45; }
+
+#eqLista .eq { display: flex; align-items: center; gap: 7px; padding: 4px 8px; cursor: pointer; font-size: 13px; }
+#eqLista .eq:hover { background: #f5f7fa; } #eqLista .eq.activo { background: var(--acento-suave); outline: 1px solid #bcd0f2; }
+#eqLista .eq .pt { width: 10px; height: 10px; border-radius: 3px; border: 1px solid rgba(0,0,0,.25); flex-shrink: 0; }
+#eqLista .eq .n { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#eqLista .eq small { color: var(--suave); white-space: nowrap; } #eqLista .eq small.ok { color: #1a7f45; }
+#eqLista .eq button { border: 0; background: none; padding: 0 3px; color: var(--suave); }
+#eqLista .cat { padding: 5px 8px 2px; font-size: 11px; font-weight: 700; color: var(--suave); text-transform: uppercase; letter-spacing: .4px; }

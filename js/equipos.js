@@ -252,3 +252,9 @@ export async function distribuir(nivel, proy, equipos, tipo, porMesa = 0, simula
     (movidos ? ` Después cambié de sitio ${movidos} puesto${movidos > 1 ? 's' : ''} donde se juntaba la gente.` : '') +
     (mejor.d.puestos.some(s => s.isla) ? ' Algunos quedaron en el centro, en islas.' : ''), { ensayos, r: mejor.r });
 }
+
+/** Color de un equipo: por categoría si la planilla las trae, si no por grupo. null si no hay ninguno. */
+export function colorEquipo(lista, q) {
+  const cats = [...new Set(lista.map(e => e.categoria).filter(Boolean))], grupos = [...new Set(lista.map(e => e.grupo).filter(Boolean))];
+  return q.categoria ? COLORES_GRUPO[cats.indexOf(q.categoria) % COLORES_GRUPO.length] : q.grupo ? COLORES_GRUPO[grupos.indexOf(q.grupo) % COLORES_GRUPO.length] : null;
+}

@@ -14,6 +14,7 @@ const A = {
   // --- equipos ---
   'equipos': ['La lista de equipos que exponen, uno por renglón: nombre ; estudiantes ; lugar.', '«Huerta ; 6 ; Patio central» es el equipo Huerta, con 6 estudiantes, que querés en el patio central.'],
   'cada equipo usa': ['El mueble que recibe cada equipo.', 'Con «Mesa (1.2 × 0.6 m)» cada equipo tiene una mesa; con «Stand» un stand de 3 × 2 m, que ocupa mucho más.'],
+  'equipo asignado': ['Qué equipo de tu lista ocupa esta mesa. Al elegirlo, la mesa toma su nombre, sus estudiantes y su color.', 'Elegís «Nexa (3)» y la mesa pasa a llamarse Nexa con 3 estudiantes. Si Nexa ya estaba en otra mesa, la deja libre.'],
   'estudiantes por equipo': ['Cuántos estudiantes se suponen cuando el renglón no lo dice.', 'Si escribís solo «Volcanes» y acá hay un 4, Volcanes queda con 4 estudiantes.'],
   'estudiantes por mesa': ['A partir de cuántos estudiantes se agrega otra mesa al equipo.', 'Con 4, un equipo de 9 recibe 3 mesas juntas. Con 0 siempre va una sola.'],
   'estudiantes': ['Cuántos estudiantes atienden este puesto. Se dibujan como pelotitas naranjas pegadas a la mesa.', 'Con 5, aparecen 5 pelotitas: primero atrás, después a los costados.'],

@@ -22,6 +22,9 @@ las ubicaciones.
   categoría («Programación — 9 equipos») y columna de estado, colorea por categoría, intenta
   dejar cada categoría junta y lista los equipos con pendientes; las frases de comentario se ignoran. Si no hay lugares elegidos, los
   elige el sistema y va sumando los más cercanos hasta que entren todos.
+- **Asignar equipos a mano**: con la lista cargada, se toca un equipo y después la mesa que le toca
+  (de cualquier tipo); en un lugar vacío pone una mesa nueva. También se asigna desde las
+  propiedades de la mesa. La lista muestra quién tiene mesa y dónde.
 - **Armar el salón solo**: por cada lugar se elige la forma (auditorio, anfiteatro, aula, mesas en U,
   mesas redondas o ronda) y la cantidad de personas; cada lugar guarda su configuración y hay un
   resumen con el total. El frente puede ser automático: prueba los cuatro lados y deja el que más

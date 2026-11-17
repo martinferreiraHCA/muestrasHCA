@@ -428,7 +428,8 @@ function alSoltar(e) {
   else if (h === 'espacios') {
     const esp = espacioEn(a.x, a.y);
     if (esp) { marcar(); const p = proyecto(); p.espacios = p.espacios.includes(esp.id) ? p.espacios.filter(i => i !== esp.id) : [...p.espacios, esp.id]; avisar('espacios'); }
-  } else if (h === 'entrada' || h === 'salida' || h === 'acceso' || h === 'espera') agregar(catalogo().find(c => c.id === h), iman(a.x), iman(a.y));
+  } else if (h === 'asignar') ui.alAsignar?.(itemEn(a.x, a.y), iman(a.x), iman(a.y));          // darle un equipo a una mesa
+  else if (h === 'entrada' || h === 'salida' || h === 'acceso' || h === 'espera') agregar(catalogo().find(c => c.id === h), iman(a.x), iman(a.y));
   else if (h === 'forma') { ui.activo = espacioEn(a.x, a.y)?.id || null; pedir(); }
   else if (h === 'dibujar') {
     const q = imanPunto(a.x, a.y);
