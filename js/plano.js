@@ -1,6 +1,6 @@
 // Editor 2D: dibuja el plano del nivel y permite ubicar, mover y girar elementos.
 import { proyecto, marcar, avisar, uid, catalogo, itemDesdeTipo } from './estado.js';
-import { espaciosDe, puntoEnPoly, esquinas, aLocal, esRedondo, areaTrabajo, ajustarTexto } from './niveles.js';
+import { espaciosDe, puntoEnPoly, esquinas, aLocal, esRedondo, areaTrabajo, ajustarTexto, posEstudiantes } from './niveles.js';
 
 export const ui = {
   herramienta: 'mover', seleccion: new Set(), iman: true, detalle: true, notas: false,
@@ -83,6 +83,14 @@ export function encuadrar() {
   vista.x = a.x0 - (r.width / vista.k - w) / 2;
   vista.y = a.y0 - (r.height / vista.k - h) / 2 - 15 / vista.k;
   pedir();
+}
+/** Muestra el nivel completo. */
+export function verTodo() {
+  if (!ui.nivel) return;
+  const r = canvas.getBoundingClientRect(); if (!r.width) return;
+  const w = ui.nivel.ancho, h = ui.nivel.alto;
+  vista.k = Math.max(1, Math.min((r.width - 60) / w, (r.height - 110) / h, 160));
+  vista.x = -(r.width / vista.k - w) / 2; vista.y = -(r.height / vista.k - h) / 2 - 15 / vista.k; pedir();
 }
 export function centrarEn(poly) {
   const r = canvas.getBoundingClientRect(); if (!r.width) return;
@@ -198,6 +206,9 @@ function dibujar() {
   }
   const its = itemsNivel();
   for (const it of its) if (!ui.ocultar?.(it)) dibujarItem(ctx, it, k, ui.seleccion.has(it.id));
+  for (const it of its) for (const [x, y] of posEstudiantes(it)) {          // estudiantes de cada puesto
+    ctx.beginPath(); ctx.arc(x, y, 0.19, 0, 7); ctx.fillStyle = '#f08c00'; ctx.fill(); ctx.lineWidth = Math.min(0.05, 1.2 * px); ctx.strokeStyle = '#fff'; ctx.stroke();
+  }
   ui.capa?.(ctx, k);
 
   // tirador de giro

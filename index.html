@@ -18,7 +18,8 @@
   <label class="campo-inline">Nivel
     <select id="selNivel"></select>
   </label>
-  <div class="tabs" role="tablist">
+  <nav id="etapas" class="etapas" aria-label="Etapas para armar la muestra"></nav>
+  <div class="tabs oculto" role="tablist">
     <button id="tabPlano" class="activo" role="tab">Planta</button>
     <button id="tabIso" role="tab">Isométrica</button>
     <button id="tabSim" role="tab">Circulación</button>
@@ -31,9 +32,11 @@
   <button id="btnPDF" class="primario">Generar PDF</button>
 </header>
 
+<div id="guia" class="guia"></div>
+
 <main>
   <aside class="panel izq">
-    <section>
+    <section data-en="datos">
       <h2>Muestra</h2>
       <label>Nombre<input id="inNombre" type="text" placeholder="Ej.: Muestra de Ciencias"></label>
       <div class="fila2">
@@ -42,13 +45,18 @@
         <label>Empieza<input id="inInicio" type="time"></label>
         <label>Termina<input id="inFin" type="time"></label>
       </div>
+    </section>
+
+    <section data-en="recorrido">
+      <h2>Entrada y salida</h2>
+      <p class="ayuda">Apretá un botón y después tocá en el plano el lugar. Si no marcás salida, la gente sale por la entrada.</p>
       <div class="botones">
         <button id="btnEntrada" title="Tocá en el plano por dónde entra la gente">＋ Entrada <span id="nEntradas" class="chip"></span></button>
         <button id="btnSalida" title="Tocá en el plano por dónde sale la gente">＋ Salida <span id="nSalidas" class="chip"></span></button>
       </div>
     </section>
 
-    <section>
+    <section data-en="datos,lugares,sol">
       <h2>Espacios <span id="resEspacios" class="chip"></span></h2>
       <p class="ayuda">Marcá los lugares donde va a pasar la muestra. También podés tocarlos en el plano con <b>Elegir espacios</b>, dibujar los tuyos con <b>Rectángulo</b> o <b>Polígono</b>, y corregir cualquiera con <b>Editar forma</b>.</p>
       <details id="detEdificios"><summary>Edificios que se ven</summary><div id="listaEdificios"></div></details>
@@ -57,11 +65,32 @@
       <button id="btnRestaurarEsp" class="ancho oculto">Restaurar los espacios del plano</button>
     </section>
 
-    <section>
+    <section data-en="equipos">
+      <h2>Equipos <span id="resEquipos" class="chip"></span></h2>
+      <p class="ayuda">Un equipo por renglón: <b>nombre ; estudiantes ; lugar</b>. Los dos últimos son opcionales. Ej.: <code>Robótica 5.º B ; 4 ; Patio central</code></p>
+      <textarea id="eqTexto" rows="10" spellcheck="false" placeholder="Robótica 5.º B ; 4&#10;Huerta ; 6 ; Patio central&#10;Volcanes ; 3&#10;Energía solar"></textarea>
+      <div class="fila2">
+        <label>Cada equipo usa<select id="eqTipo"></select></label>
+        <label title="Para los renglones que no dicen cuántos son">Estudiantes por equipo<input id="eqPorDef" type="number" min="0" max="40" value="4"></label>
+      </div>
+      <button id="btnDistribuir" class="primario ancho">Distribuir en los lugares elegidos</button>
+      <p id="eqResultado" class="ayuda" style="margin-top:8px"></p>
+    </section>
+
+    <section data-en="muebles,recorrido">
       <h2>Elementos</h2>
       <p class="ayuda">Tocá un elemento para agregarlo, o arrastralo al plano.</p>
       <div id="catalogo" class="catalogo"></div>
       <button id="btnNuevoTipo" class="ancho">+ Crear mi propio elemento</button>
+    </section>
+
+    <section data-en="folleto">
+      <h2>Para entregar</h2>
+      <p class="ayuda">El <b>mapa del folleto</b> se descarga con los botones de arriba del dibujo (SVG para editar, PNG para pegar). El <b>PDF</b> reúne la planta con las ubicaciones, la vista 3D, la circulación, el sol y el listado.</p>
+      <button id="btnPDF2" class="primario ancho">Generar PDF</button>
+    </section>
+    <section>
+      <label class="check"><input type="checkbox" id="chkTodoPanel"> Mostrar todos los paneles</label>
     </section>
   </aside>
 
@@ -80,8 +109,10 @@
       <label title="Mostrar mobiliario y pavimentos del plano"><input type="checkbox" id="chkDetalle" checked> Detalle</label>
       <label title="Mostrar las referencias escritas en el plano: a construir, a demoler, existente…"><input type="checkbox" id="chkNotas"> Notas</label>
       <button id="btnEncuadrar" title="Centrar la vista en los espacios elegidos (F)">Encuadrar</button>
+      <button id="btn3D" title="Ver la distribución en tres dimensiones">Ver en 3D</button>
     </div>
     <div class="herramientas oculto" id="herramientasIso">
+      <button id="btnVolverPlanta" class="activo">← Volver a la planta</button>
       <button id="btnGiroIzq" title="Girar 90° a la izquierda">⟲ Girar</button>
       <button id="btnGiroDer" title="Girar 90° a la derecha">Girar ⟳</button>
       <label>Muros

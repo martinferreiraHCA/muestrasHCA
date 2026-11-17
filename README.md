@@ -6,6 +6,14 @@ las ubicaciones.
 
 ## Qué hace
 
+- **Guía por etapas**: el armado va paso a paso (Datos → Lugares → Equipos → Muebles → Recorrido →
+  Sol → Folleto y PDF). Cada paso muestra solo lo que hace falta, dice qué falta y acerca la
+  vista a los lugares elegidos.
+- **Equipos en texto plano**: se escribe un equipo por renglón (`nombre ; estudiantes ; lugar`)
+  y el sistema ubica un puesto por equipo contra las paredes de los lugares elegidos, separados
+  parejo y con el centro libre. Si hay una Entrada marcada y también entran en islas, compara
+  las dos opciones con el simulador y deja la que circula mejor. Cada puesto muestra sus
+  estudiantes, que además ocupan lugar en la simulación.
 - **Niveles y espacios**: subsuelo, planta baja, primer y segundo piso, tomados del plano
   `PLANO_MDCI.dwg`. Los salones se detectan del plano y los exteriores de planta baja (patio
   central, patio este, cancha, explanada) vienen trazados.

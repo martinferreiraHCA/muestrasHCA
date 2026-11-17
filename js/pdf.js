@@ -1,5 +1,5 @@
 // Generación del PDF: planta con ubicaciones (vectorial), vista isométrica y listado.
-import { espaciosDe, espaciosElegidos, areaTrabajo, esquinas, esRedondo, puntoEnPoly, ajustarTexto } from './niveles.js';
+import { espaciosDe, espaciosElegidos, areaTrabajo, esquinas, esRedondo, puntoEnPoly, ajustarTexto, posEstudiantes } from './niveles.js';
 import { contraste } from './plano.js';
 
 const rgb = hex => { const n = parseInt(hex.slice(1), 16); return [n >> 16, (n >> 8) & 255, n & 255]; };
@@ -102,9 +102,11 @@ export function generarPDF(proy, niveles, op) {
         }
       } else if (it.modelo !== 'texto') poligono(doc, pts, 'FD');
 
+      doc.setFillColor(240, 140, 0); doc.setDrawColor(255, 255, 255); doc.setLineWidth(0.05);
+      for (const [ex, ey] of posEstudiantes(it)) doc.circle(X(ex), Y(ey), Math.max(0.25, 0.19 * s), 'FD');
       if (!it.etiqueta) continue;
       const esp = elegidos.find(e => puntoEnPoly(it.x, it.y, e.poly)) || todos.filter(e => puntoEnPoly(it.x, it.y, e.poly)).sort((a, b) => a.area - b.area)[0];
-      const fila = { ref: '', etiqueta: it.etiqueta, elemento: it.nombre, medidas: `${m2(it.w)} × ${m2(it.d)} m`, espacio: esp?.nombre || '', nivel: nivel.nombre };
+      const fila = { ref: '', etiqueta: it.etiqueta, elemento: it.nombre, medidas: `${m2(it.w)} × ${m2(it.d)} m`, est: it.estudiantes || '', espacio: esp?.nombre || '', nivel: nivel.nombre };
       filas.push(fila);
       let t = ajustarTexto(it.etiqueta, it.w * s, it.d * s, it.modelo === 'texto' ? 12 : 4.5);
       if (t.tam < 1.25) {          // no entra: se usa un número de referencia
@@ -205,5 +207,5 @@ function listado(doc, proy, niveles, filas, { PW, PH, M, pagina, encabezado }) {
     c.cant++; cuenta.set(k, c);
   }
   tabla('Resumen de elementos', [{ t: 'Nivel', k: 'nivel', x: 0 }, { t: 'Elemento', k: 'elemento', x: W * 0.22 }, { t: 'Medidas (ancho × fondo × alto)', k: 'medidas', x: W * 0.55 }, { t: 'Cantidad', k: 'cant', x: W * 0.88 }], [...cuenta.values()]);
-  tabla('Ubicaciones con nombre', [{ t: 'Ref.', k: 'ref', x: 0 }, { t: 'Nombre', k: 'etiqueta', x: W * 0.07 }, { t: 'Elemento', k: 'elemento', x: W * 0.42 }, { t: 'Medidas', k: 'medidas', x: W * 0.6 }, { t: 'Espacio', k: 'espacio', x: W * 0.73 }, { t: 'Nivel', k: 'nivel', x: W * 0.89 }], filas);
+  tabla('Ubicaciones con nombre', [{ t: 'Ref.', k: 'ref', x: 0 }, { t: 'Nombre', k: 'etiqueta', x: W * 0.07 }, { t: 'Elemento', k: 'elemento', x: W * 0.42 }, { t: 'Medidas', k: 'medidas', x: W * 0.56 }, { t: 'Estud.', k: 'est', x: W * 0.67 }, { t: 'Espacio', k: 'espacio', x: W * 0.73 }, { t: 'Nivel', k: 'nivel', x: W * 0.89 }], filas);
 }

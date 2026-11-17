@@ -1,7 +1,7 @@
 // Simulación de circulación: visitantes que entran, recorren las paradas (stands, mesas) y salen.
 // Modelo: grilla de 20 cm con obstáculos, campos de distancia (Dijkstra) hacia cada destino
 // y separación entre personas; la velocidad baja cuando aumenta la densidad.
-import { areaTrabajo, aLocal, esRedondo } from './niveles.js';
+import { areaTrabajo, aLocal, esRedondo, posEstudiantes } from './niveles.js';
 
 const C = 0.2;            // tamaño de celda (m)
 const CH = 0.5;           // celda del mapa de calor (m)
@@ -47,6 +47,10 @@ export class Simulacion {
     }
     for (const [cx, cy, r] of area?.circulos || [])           // obstáculos redondos extra (troncos de árboles)
       for (let y = cy - r; y <= cy + r; y += C * 0.9) for (let x = cx - r; x <= cx + r; x += C * 0.9) { const i = this.#idx(x, y); if (i >= 0 && Math.hypot(x - cx, y - cy) <= r) this.bloq[i] = 1; }
+    // los estudiantes de cada puesto están parados en su lugar: ocupan espacio, cuentan para la densidad
+    // y los caminos los rodean
+    this.fijos = items.flatMap(posEstudiantes).map(([x, y]) => ({ x, y }));
+    for (const f of this.fijos) for (const [dx, dy] of [[0, 0], [C, 0], [-C, 0], [0, C], [0, -C]]) { const i = this.#idx(f.x + dx * 0.6, f.y + dy * 0.6); if (i >= 0) this.bloq[i] = 1; }
     // penalización junto a obstáculos: la gente prefiere el centro de los pasillos
     this.pen = new Float32Array(this.gw * this.gh).fill(1);
     for (let y = 1; y < this.gh - 1; y++) for (let x = 1; x < this.gw - 1; x++) {
@@ -188,12 +192,12 @@ export class Simulacion {
   #nuevo(x, y) {
     const n = this.paradas.length, cuantas = this.p.paradas > 0 ? Math.min(this.p.paradas, n) : n;
     const a = { x, y, vx: 0, vy: 0, vel: this.p.velocidad * (0.8 + this.rnd() * 0.4), estado: 'camina', destino: -1, espera: 0,
-      vistas: new Set(), faltan: cuantas, paso: 0, t: 0, dens: 0 };
+      vistas: new Set(), faltan: cuantas, paso: 0, t: 0, dens: 0, mejor: Infinity, tMejor: 0 };
     this.agentes.push(a); this.#elegir(a);
   }
   #elegir(a) {
     if (a.destino >= 0) this.paradas[a.destino].ocup--;
-    a.destino = -1; a.estado = 'sale';
+    a.destino = -1; a.estado = 'sale'; a.mejor = Infinity; a.tMejor = this.t;
     if (a.faltan <= 0) return;
     const i = this.#idx(a.x, a.y);
     if (this.orden) {
@@ -222,6 +226,7 @@ export class Simulacion {
     // vecinos por grilla de 1 m
     const cubos = new Map(), clave = (x, y) => Math.floor(x) * 4096 + Math.floor(y);
     for (const a of this.agentes) { const k = clave(a.x, a.y); (cubos.get(k) || cubos.set(k, []).get(k)).push(a); }
+    for (const a of this.fijos) { const k = clave(a.x, a.y); (cubos.get(k) || cubos.set(k, []).get(k)).push(a); }
     const quedan = [], tope = P.tiempoVisita * 60;
     if (this.agentes.length > this.maxAdentro) this.maxAdentro = this.agentes.length;
     for (const a of this.agentes) {
@@ -252,12 +257,15 @@ export class Simulacion {
       } else {
         const campo = a.destino >= 0 ? this.#campoParada(a.destino) : this.#campoSalida();
         const d0 = i >= 0 ? campo[i] : Infinity;
+        // si hace rato que no avanza (quedó trabado entre la gente), se da por llegado o sigue con otra cosa
+        if (!(d0 >= a.mejor - 0.05)) { a.mejor = d0; a.tMejor = this.t; }
+        const trabado = this.t - a.tMejor > 25;
         // llega al destino; si el puesto está lleno, se queda mirando desde atrás
-        if (d0 <= C * 1.2 || (a.destino >= 0 && d0 < 2.2 && a.dens >= 1.6)) {
+        if (d0 <= C * 1.2 || (a.destino >= 0 && d0 < 2.2 && a.dens >= 1.6) || (trabado && (a.destino < 0 || d0 < 4))) {
           if (a.destino >= 0) { a.estado = 'parado'; a.espera = P.permanencia * (0.6 + this.rnd() * 0.8); }
           else { this.fin.push(a.t); continue; }                     // salió
-        } else if (!isFinite(d0)) {
-          if (a.destino >= 0) this.#elegir(a); else { this.fin.push(a.t); continue; }
+        } else if (!isFinite(d0) || trabado) {
+          if (a.destino >= 0) { if (trabado) { a.vistas.add(a.destino); a.faltan--; } this.#elegir(a); } else { this.fin.push(a.t); continue; }
         } else {
           const x = i % this.gw, y = (i - x) / this.gw; let m = i;
           for (let qy = -1; qy <= 1; qy++) for (let qx = -1; qx <= 1; qx++) {

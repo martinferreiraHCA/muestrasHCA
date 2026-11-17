@@ -117,6 +117,20 @@ export function aLocal(it, x, y) {
   const a = -it.rot * Math.PI / 180, c = Math.cos(a), s = Math.sin(a), dx = x - it.x, dy = y - it.y;
   return [dx * c - dy * s, dx * s + dy * c];
 }
+/** Posiciones (en metros) de los estudiantes de un puesto: adentro del stand, o detrás de la mesa. */
+export function posEstudiantes(it) {
+  const n = it.estudiantes | 0; if (n <= 0) return [];
+  const a = it.rot * Math.PI / 180, c = Math.cos(a), s = Math.sin(a), sep = 0.55;
+  const porFila = Math.max(1, Math.floor((it.w - 0.3) / sep)), y0 = it.modelo === 'stand' ? -it.d / 2 + 0.5 : -it.d / 2 - 0.4, dir = it.modelo === 'stand' ? 1 : -1;
+  const r = [];
+  for (let i = 0; i < n; i++) {
+    const fila = Math.floor(i / porFila), enFila = Math.min(porFila, n - fila * porFila), k = i % porFila;
+    const lx = (k - (enFila - 1) / 2) * sep, ly = y0 + dir * fila * sep;
+    r.push([it.x + lx * c - ly * s, it.y + lx * s + ly * c]);
+  }
+  return r;
+}
+
 export const esRedondo = it => it.modelo === 'mesa-redonda' || it.modelo === 'cilindro' || it.modelo === 'persona';
 
 /** Rectángulo de trabajo: espacios elegidos + elementos del nivel; si no hay nada, el nivel entero. */

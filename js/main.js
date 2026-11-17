@@ -3,6 +3,7 @@ import * as E from './estado.js';
 import { proyecto, marcar, avisar, uid } from './estado.js';
 import { cargarIndice, cargarNivel as cargarCrudo, nivelVisible, edificiosOcultos, espaciosDe, espaciosElegidos, geo } from './niveles.js';
 import * as SOL from './sol.js';
+import { leerEquipos, distribuir } from './equipos.js';
 import { generarFolleto, aPNG, TEMAS, FORMATOS, FOLLETO_DEF } from './folleto.js';
 import * as P from './plano.js';
 import { ui } from './plano.js';
@@ -105,6 +106,102 @@ async function ver(v) {
   }
 }
 const verIso = si => ver(si ? 'iso' : 'plano');
+
+// ---------- etapas: guía paso a paso ----------
+const ETAPAS = [
+  { id: 'datos', t: 'Datos', titulo: 'Datos de la muestra', vista: 'plano', herr: 'mover',
+    ayuda: 'Poné el nombre, la fecha y el horario. Elegí el nivel (arriba) y, en «Edificios que se ven», qué construcciones mostrar.' },
+  { id: 'lugares', t: 'Lugares', titulo: 'Elegir los lugares', vista: 'plano', herr: 'espacios',
+    ayuda: 'Tocá en el plano los lugares donde va a ser la muestra, o tildalos en la lista. Si un límite está mal, corregilo con «Editar forma»; si falta un lugar, dibujalo con Rectángulo o Polígono.' },
+  { id: 'equipos', t: 'Equipos', titulo: 'Cargar los equipos', vista: 'plano', herr: 'mover',
+    ayuda: 'Escribí los equipos, uno por renglón, y apretá «Distribuir»: el sistema ubica un puesto por equipo en los lugares elegidos, dejando libre la circulación. Si no tenés equipos, seguí al paso siguiente.' },
+  { id: 'muebles', t: 'Muebles', titulo: 'Distribuir los muebles', vista: 'plano', herr: 'mover',
+    ayuda: 'Ajustá la distribución: tocá un elemento de la lista para agregarlo y arrastralo a su lugar. Con uno seleccionado, a la derecha podés cambiarle el nombre, los estudiantes y repetirlo en filas.' },
+  { id: 'recorrido', t: 'Recorrido', titulo: 'Entrada, salida y circulación', vista: 'sim', herr: 'mover',
+    ayuda: 'Marcá por dónde entra y por dónde sale la gente y apretá «Simular» para ver cómo circula y dónde se junta.' },
+  { id: 'sol', t: 'Sol', titulo: 'Sol y sombras', vista: 'sol', herr: 'mover',
+    ayuda: 'Mirá qué partes quedan al sol a la hora de la muestra. Sirve sobre todo para los lugares al aire libre.' },
+  { id: 'folleto', t: 'Folleto y PDF', titulo: 'Folleto y PDF', vista: 'folleto', herr: 'mover',
+    ayuda: 'Revisá el mapa «cómo llegar», descargalo y generá el PDF con todo.' },
+];
+let lugar = -1;                                    // en la etapa de muebles: índice del lugar enfocado (-1 = todos)
+const etapa = () => Math.min(ETAPAS.length, Math.max(1, proyecto().etapa || 1));
+const lugares = () => nivel ? espaciosElegidos(nivel, proyecto()) : [];
+function enfocarLugar() {
+  const l = lugares();
+  if (lugar >= l.length) lugar = -1;
+  if (lugar < 0 || !l.length) P.encuadrar(); else P.centrarEn(l[lugar].poly);
+}
+async function irEtapa(n, mover = true) {
+  n = Math.min(ETAPAS.length, Math.max(1, n));
+  let e = ETAPAS[n - 1];
+  if (n > 2 && !lugares().length) { aviso('Primero elegí al menos un lugar para la muestra.'); n = 2; e = ETAPAS[1]; }
+  proyecto().etapa = n; avisar('etapa');
+  document.querySelectorAll('.panel.izq section[data-en]').forEach(s => s.classList.toggle('oculto', !$('chkTodoPanel').checked && !s.dataset.en.split(',').includes(e.id)));
+  await ver(e.vista);
+  if (e.vista === 'plano') ui.alHerramienta(e.herr);
+  if (mover && e.vista !== 'folleto') {
+    if (n <= 2) P.verTodo();
+    else if (e.id === 'muebles') { lugar = lugares().length === 1 ? 0 : -1; enfocarLugar(); }
+    else P.encuadrar();
+  }
+  if (n === 1) $('detEdificios').open = true;
+  if (e.id === 'equipos') pintarEquipos();
+  pintarGuia();
+}
+function pintarGuia() {
+  if (!nivel) return;
+  const n = etapa(), e = ETAPAS[n - 1], p = proyecto(), l = lugares(), its = P.itemsNivel();
+  $('etapas').innerHTML = ETAPAS.map((x, i) => `<button data-n="${i + 1}" class="${i + 1 === n ? 'activa' : i + 1 < n ? 'hecha' : ''}"><span class="n">${i + 1 < n ? '✓' : i + 1}</span>${x.t}</button>`).join('');
+  let estado = '', extra = '';
+  if (n === 1) estado = p.fecha ? `${p.fecha.split('-').reverse().join('/')}${p.horaInicio ? ' · ' + p.horaInicio + (p.horaFin ? ' a ' + p.horaFin : '') : ' · <span class="falta">falta el horario</span>'}` : '<span class="falta">falta la fecha</span>';
+  if (n === 2) estado = l.length ? `<span class="ok">${l.length} lugar${l.length > 1 ? 'es' : ''} · ${Math.round(l.reduce((a, x) => a + x.area, 0))} m²</span>` : '<span class="falta">todavía no elegiste ninguno</span>';
+  if (e.id === 'equipos') { const q = leerEquipos(p.equipos?.texto, p.equipos?.porDef ?? 4), u = its.filter(i => i.equipo).length; estado = q.length ? `${q.length} equipos cargados${u ? ` · <span class="ok">${u} ubicados</span>` : ' · <span class="falta">sin distribuir todavía</span>'}` : ''; }
+  if (e.id === 'muebles') {
+    const act = lugar >= 0 && l[lugar] ? l[lugar] : null;
+    const dentro = act ? its.filter(i => puntoEnPoligono(i.x, i.y, act.poly)).length : its.length;
+    estado = `${dentro} elemento${dentro === 1 ? '' : 's'}${act ? ' en este lugar' : ' en total'}`;
+    if (l.length > 1) extra = `<div class="lugares"><button data-l="prev" title="Lugar anterior">◀</button><b title="${esc(act ? act.nombre : 'Todos los lugares')}">${esc(act ? act.nombre : 'Todos los lugares')}</b><button data-l="next" title="Lugar siguiente">▶</button><button data-l="todos" title="Ver todos los lugares juntos">Ver todos</button></div>`;
+  }
+  if (e.id === 'recorrido') { const ne = its.filter(esEntrada).length; estado = ne ? `<span class="ok">${ne} entrada${ne > 1 ? 's' : ''}</span>` : '<span class="falta">falta marcar la entrada</span>'; }
+  if (e.id === 'sol' && !l.some(x => x.exterior || x.propio)) estado = 'Tus lugares son interiores: podés pasar al paso siguiente.';
+  $('guia').innerHTML = `<span class="paso">Paso ${n} de ${ETAPAS.length}</span><h1>${e.titulo}</h1><p>${e.ayuda} ${estado ? '<b>' + estado + '</b>' : ''}</p>${extra}
+    <div class="nav"><button data-n="${n - 1}" ${n === 1 ? 'disabled' : ''}>◀ Anterior</button>${n < ETAPAS.length ? `<button data-n="${n + 1}" class="primario">Siguiente ▶</button>` : ''}</div>`;
+}
+const puntoEnPoligono = (x, y, p) => { let d = false; for (let i = 0, j = p.length - 1; i < p.length; j = i++) if ((p[i][1] > y) !== (p[j][1] > y) && x < (p[j][0] - p[i][0]) * (y - p[i][1]) / (p[j][1] - p[i][1]) + p[i][0]) d = !d; return d; };
+
+// ---------- equipos en texto plano y distribución automática ----------
+const TIPOS_EQ = ['stand', 'mesa', 'tablon', 'mesa-redonda', 'mesa-escolar', 'gazebo'];
+function pintarEquipos() {
+  const q = proyecto().equipos || {};
+  const tipos = E.catalogo().filter(t => TIPOS_EQ.includes(t.id) || !t.grupo);
+  $('eqTipo').innerHTML = tipos.map(t => `<option value="${t.id}" ${t.id === (q.tipo || 'stand') ? 'selected' : ''}>${esc(t.nombre)} (${t.w} × ${t.d} m)</option>`).join('');
+  if (document.activeElement !== $('eqTexto')) $('eqTexto').value = q.texto || '';
+  $('eqPorDef').value = q.porDef ?? 4;
+  contarEquipos();
+}
+function contarEquipos() {
+  const l = leerEquipos($('eqTexto').value, num($('eqPorDef').value, 0, 40, 4));
+  $('resEquipos').textContent = l.length ? `${l.length} · ${l.reduce((a, e) => a + e.estudiantes, 0)} estudiantes` : '';
+  return l;
+}
+function guardarEquipos() { proyecto().equipos = { texto: $('eqTexto').value, tipo: $('eqTipo').value, porDef: num($('eqPorDef').value, 0, 40, 4) }; avisar('nombre'); pintarGuia(); }
+async function distribuirEquipos() {
+  guardarEquipos();
+  const l = contarEquipos(), p = proyecto();
+  if (!l.length) return aviso('Escribí al menos un equipo, uno por renglón.');
+  if (!lugares().length) return aviso('Primero elegí los lugares de la muestra.');
+  const previos = p.items.filter(i => i.equipo && i.nivel === nivel.id).length;
+  if (previos && !await confirmar(`Ya hay ${previos} puestos de equipos ubicados. ¿Los reemplazo por una distribución nueva?`, 'Reemplazar')) return;
+  aviso('Distribuyendo…'); await new Promise(f => setTimeout(f, 30));
+  const r = distribuir(nivel, p, l, E.catalogo().find(t => t.id === $('eqTipo').value));
+  marcar();
+  p.items = [...p.items.filter(i => !(i.equipo && i.nivel === nivel.id)), ...r.items];
+  ui.seleccion.clear(); avisar('items'); P.encuadrar();
+  $('eqResultado').innerHTML = `<b>${r.items.length} de ${l.length} equipos ubicados.</b> ${esc(r.resumen)}` +
+    (r.sinLugar.length ? ` <span class="alerta">No entraron: ${esc(r.sinLugar.map(e => e.nombre).join(', '))}. Elegí más lugares o un mueble más chico.</span>` : '');
+  aviso(`${r.items.length} equipos ubicados.`);
+}
 
 // ---------- folleto: mapa «cómo llegar» ----------
 let folleto = null;
@@ -420,8 +517,12 @@ function pintarPanel() {
         <label>Alto (m)<input id="pH" type="number" min="0" max="8" step="0.05" value="${comun('h')}"></label>
       </div>
       <div class="fila2">
+        <label title="Estudiantes que atienden este puesto">Estudiantes<input id="pEst" type="number" min="0" max="40" value="${comun('estudiantes') ?? ''}" placeholder="0"></label>
         <label>Giro (°)<input id="pRot" type="number" step="5" value="${comun('rot')}"></label>
+      </div>
+      <div class="fila2">
         <label>Color<input id="pColor" type="color" value="${comun('color') || '#888888'}"></label>
+        <span></span>
       </div>
       <label class="check" title="Los visitantes de la simulación de circulación se detienen en las paradas"><input id="pParada" type="checkbox" ${sel.every(esParada) ? 'checked' : ''}> Es una parada del recorrido</label>
       <div class="botones">
@@ -461,6 +562,7 @@ function pintarPanel() {
   vivo('pH', v => { const n = num(v, 0, 8, null); if (n !== null) sel.forEach(i => { i.h = n; }); });
   vivo('pRot', v => { const n = num(v, -3600, 3600, null); if (n !== null) sel.forEach(i => { i.rot = ((n % 360) + 360) % 360; }); });
   vivo('pColor', v => sel.forEach(i => { i.color = v; }));
+  vivo('pEst', v => { const n = num(v, 0, 40, 0); sel.forEach(i => { i.estudiantes = Math.round(n); }); });
   $('pParada').onchange = e => { marcar(); sel.forEach(i => { i.parada = e.target.checked; }); avisar('items'); };
   $('pDup').onclick = duplicar; $('pBorrar').onclick = borrar; $('pGirar').onclick = () => girarSel(90);
   $('pFrente').onclick = () => { marcar(); const p = proyecto(); p.items = [...p.items.filter(i => !ui.seleccion.has(i.id)), ...sel]; avisar('items'); };
@@ -617,10 +719,10 @@ async function menuProyecto() {
 
 // ---------- eventos ----------
 function conectar() {
-  $('selProyecto').onchange = async e => { E.abrirProyecto(e.target.value); await fijarNivel(proyecto().nivel); if (vistaSim) simCrear(); };
-  $('btnNuevo').onclick = async () => { const n = await pedirNombre('Nueva muestra', 'Muestra de …'); if (n) { E.crearProyecto(n); await fijarNivel(proyecto().nivel); } };
+  $('selProyecto').onchange = async e => { E.abrirProyecto(e.target.value); await fijarNivel(proyecto().nivel); await irEtapa(etapa()); };
+  $('btnNuevo').onclick = async () => { const n = await pedirNombre('Nueva muestra', 'Muestra de …'); if (n) { E.crearProyecto(n); await fijarNivel(proyecto().nivel); await irEtapa(1); } };
   $('btnMasProyecto').onclick = menuProyecto;
-  $('selNivel').onchange = async e => { proyecto().nivel = e.target.value; avisar('nivel'); await fijarNivel(e.target.value); simCrear(); solTabla = null; if (vistaIso) verIso(true); if (vistaFol) pintarFolleto(); };
+  $('selNivel').onchange = async e => { proyecto().nivel = e.target.value; avisar('nivel'); await fijarNivel(e.target.value); simCrear(); solTabla = null; await irEtapa(etapa()); };
   $('tabPlano').onclick = () => ver('plano'); $('tabIso').onclick = () => ver('iso'); $('tabSim').onclick = () => ver('sim'); $('tabSol').onclick = () => ver('sol'); $('tabFolleto').onclick = () => ver('folleto');
   $('btnAcceso').onclick = async () => { await ver('plano'); ui.alHerramienta('acceso'); };
   $('btnFolSVG').onclick = () => folleto && descargar(archivo(proyecto().nombre) + '-como-llegar.svg', folleto.svg, 'image/svg+xml');
@@ -642,6 +744,19 @@ function conectar() {
   $('btnEntrada').onclick = () => marcarPaso('entrada'); $('btnSalida').onclick = () => marcarPaso('salida');
   $('inAltura').onchange = e => { marcar(); proyecto().altura = num(e.target.value, 1, 8, 3); avisar('altura'); };
   $('inBuscarEsp').oninput = pintarEspacios;
+  const clicEtapa = e => { const b = e.target.closest('[data-n]'); if (b && !b.disabled) irEtapa(+b.dataset.n); };
+  $('etapas').onclick = clicEtapa;
+  $('guia').onclick = e => {
+    const b = e.target.closest('[data-l]'); if (!b) return clicEtapa(e);
+    const l = lugares().length;
+    lugar = b.dataset.l === 'todos' ? -1 : b.dataset.l === 'next' ? (lugar + 1) % l : (lugar <= 0 ? l - 1 : lugar - 1);
+    enfocarLugar(); pintarGuia();
+  };
+  $('chkTodoPanel').onchange = () => irEtapa(etapa(), false);
+  $('eqTexto').oninput = () => { contarEquipos(); }; $('eqTexto').onchange = $('eqTipo').onchange = $('eqPorDef').onchange = guardarEquipos;
+  $('btnDistribuir').onclick = distribuirEquipos;
+  $('btnPDF2').onclick = () => exportarPDF();
+  $('btn3D').onclick = () => ver('iso'); $('btnVolverPlanta').onclick = () => ver('plano');
   $('listaEdificios').onchange = e => {
     const id = e.target.dataset.id; if (!id) return;
     marcar(); const oc = new Set(edificiosOcultos(proyecto())); e.target.checked ? oc.delete(id) : oc.add(id);
@@ -669,7 +784,7 @@ function conectar() {
       const e = espaciosDe(nivel, p).find(x => x.id === id); P.centrarEn(e.poly); return;
     } else {
       marcar(); p.espacios = p.espacios.includes(id) ? p.espacios.filter(x => x !== id) : [...p.espacios, id];
-      avisar('espacios'); P.encuadrar(); return;
+      avisar('espacios'); if (etapa() !== 2) P.encuadrar(); return;
     }
     avisar('espacios');
   };
@@ -738,9 +853,9 @@ async function arrancar() {
     const ids = new Set(proyecto().items.map(i => i.id));
     [...ui.seleccion].forEach(id => { if (!ids.has(id)) ui.seleccion.delete(id); });
     if (crudo) { const f = nivelVisible(crudo, proyecto()); if (f !== nivel) { nivel = f; ui.nivel = f; solTabla = null; } }
-    pintarBarra(); solCache = null;
+    pintarBarra(); solCache = null; pintarGuia();
     if (vistaFol) { pintarFolleto(); if (que === 'folleto') return; }
-    if (que !== 'nombre' && que !== 'sol' && sim) { sim = null; simComp = null; simPausar(); if (vistaSim) simCrear(); }
+    if (que !== 'nombre' && que !== 'sol' && que !== 'etapa' && sim) { sim = null; simComp = null; simPausar(); if (vistaSim) simCrear(); }
     if (que !== 'items' && que !== 'nombre') pintarEspacios();
     if (que === 'catalogo' || que === 'todo') pintarCatalogo();
     if (que !== 'nombre') pintarPanel();
@@ -752,5 +867,6 @@ async function arrancar() {
   } catch (e) { $('cargando').textContent = 'No se pudo cargar el plano. Abrí el sitio desde un servidor web (no como archivo local).'; return; }
   $('selNivel').innerHTML = indice.map(n => `<option value="${n.id}">${esc(n.nombre)}</option>`).join('');
   await fijarNivel(proyecto().nivel);
+  await irEtapa(etapa());
 }
 arrancar();
