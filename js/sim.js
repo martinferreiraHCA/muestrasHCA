@@ -378,6 +378,47 @@ export class Simulacion {
     };
   }
 
+  /**
+   * Explica el punto más congestionado: dónde está, por qué se junta la gente ahí y qué se puede hacer.
+   * Devuelve null si no hubo aglomeración que valga la pena marcar.
+   */
+  diagnostico() {
+    if (this.#diag !== undefined) return this.#diag;
+    const r = this.resumen(); if (!r.critico || r.pctAglom < 0.5) return (this.#diag = null);
+    const [x, y] = r.critico, sug = [];
+    const dist = l => Math.min(Infinity, ...l.map(i => { const [cx, cy] = this.#centro(i); return Math.hypot(cx - x, cy - y); }));
+    const dEnt = dist(this.entradas.flat()), dSal = dist(this.fSalida);
+    const cerca = this.paradas.map(p => ({ p, d: Math.hypot(p.it.x - x, p.it.y - y) })).sort((a, b) => a.d - b.d)[0];
+    // ancho libre del paso en ese punto
+    const largo = (dx, dy) => { let n = 0; for (let k = 1; k < 30 && this.#libre(x + dx * k * C, y + dy * k * C); k++) n++; return n * C; };
+    const ancho = Math.min(largo(1, 0) + largo(-1, 0), largo(0, 1) + largo(0, -1)) + C;
+    let causa, corto, tipo;
+    if (dEnt < 3) {
+      tipo = 'entrada'; corto = 'en la entrada';
+      causa = 'Está en la entrada: los padres llegan más rápido de lo que alcanzan a repartirse por la muestra.';
+      sug.push(['llegada', 'Hacer que lleguen más repartidos (el doble de minutos de llegada).'], ['tandas', 'Hacerlos entrar por tandas, esperando en otro lugar.'],
+        [null, 'Marcar una segunda Entrada, o alejar de la entrada el primer puesto para que no frene a los que llegan.']);
+    } else if (cerca && cerca.d < 3) {
+      const X = cerca.p, vecino = this.paradas.filter(q => q !== X).map(q => ({ q, d: Math.hypot(q.it.x - X.it.x, q.it.y - X.it.y) })).sort((a, b) => a.d - b.d)[0];
+      tipo = 'stand'; corto = `frente a «${X.nombre}»`;
+      causa = `Se junta la gente frente a «${X.nombre}»` + (vecino && vecino.d < 3.5 ? `, que está a ${vecino.d.toFixed(1).replace('.', ',')} m de «${vecino.q.nombre}»: los dos grupos de público se pisan.` : ancho < 2.4 ? `, donde quedan solo ${ancho.toFixed(1).replace('.', ',')} m libres para mirar y para pasar.` : '.');
+      if (vecino && vecino.d < 3.5) sug.push([null, `Separar «${X.nombre}» de «${vecino.q.nombre}» (dejar al menos 3,5 m entre los dos) o llevar uno a otro lugar.`]);
+      else sug.push([null, `Mover «${X.nombre}» a un sitio con más espacio delante, o girarlo para que su frente dé a la parte más ancha.`]);
+      if (this.p.hijoPrimero && (X.it.estudiantes | 0) >= 5) sug.push([null, `«${X.nombre}» tiene ${X.it.estudiantes} estudiantes, así que muchos padres van primero ahí: conviene darle el lugar más amplio.`]);
+      sug.push(['permanencia', 'Acortar el tiempo por stand (un 25 % menos).'], ['tandas', 'Hacerlos entrar por tandas, para que haya menos gente a la vez.']);
+    } else if (ancho < 1.8 || dSal < 3) {
+      tipo = 'paso'; corto = dSal < 3 ? 'en la salida' : `paso de ${ancho.toFixed(1).replace('.', ',')} m`;
+      causa = dSal < 3 ? 'Está en la salida: se cruzan los que se van con los que siguen recorriendo.' : `Es un paso angosto, de unos ${ancho.toFixed(1).replace('.', ',')} m, por donde pasa casi todo el mundo.`;
+      sug.push(['guiado', 'Usar recorrido guiado, en un solo sentido, para que no se crucen.'], [null, 'Marcar la Salida en otra puerta, lejos de la Entrada.'], [null, 'No dejar puestos ni muebles cerca de ese paso.'], ['llegada', 'Hacer que lleguen más repartidos.']);
+    } else {
+      tipo = 'cruce'; corto = 'cruce de recorridos';
+      causa = 'Es un cruce: por ahí pasan los que van de un puesto a otro en direcciones distintas.';
+      sug.push(['guiado', 'Usar recorrido guiado, en un solo sentido.'], ['llegada', 'Hacer que lleguen más repartidos.'], [null, 'Dejar ese sector libre de muebles.']);
+    }
+    return (this.#diag = { x, y, tipo, corto, causa, sugerencias: sug, ancho, pct: r.pctAglom });
+  }
+  #diag;
+
   // ---------- dibujo sobre el plano ----------
   #calor = null; #calorT = -1;
   dibujar(ctx, k, mapa) {
@@ -426,8 +467,18 @@ export class Simulacion {
       ctx.strokeStyle = '#0b7285'; ctx.lineWidth = Math.max(0.1, 2.5 * px); ctx.lineJoin = 'round'; ctx.stroke();
       if (!sg.fin) { ctx.beginPath(); ctx.arc(sg.x, sg.y, Math.max(0.42, 7 * px), 0, 7); ctx.fillStyle = '#15aabf'; ctx.fill(); ctx.lineWidth = 2.5 * px; ctx.strokeStyle = '#fff'; ctx.stroke(); }
     }
-    const cr = this.terminada && this.resumen().critico;
-    if (cr) { ctx.beginPath(); ctx.arc(cr[0], cr[1], Math.max(1, 16 * px), 0, 7); ctx.strokeStyle = '#d62828'; ctx.lineWidth = 2.5 * px; ctx.setLineDash([5 * px, 4 * px]); ctx.stroke(); ctx.setLineDash([]); }
+    const dg = this.terminada && this.diagnostico();
+    if (dg) {          // punto más congestionado: círculo y cartel que lo explica
+      const R = Math.max(1, 16 * px), tam = 12 * px;
+      ctx.beginPath(); ctx.arc(dg.x, dg.y, R, 0, 7); ctx.strokeStyle = '#d62828'; ctx.lineWidth = 2.5 * px; ctx.setLineDash([5 * px, 4 * px]); ctx.stroke(); ctx.setLineDash([]);
+      ctx.font = `700 ${tam}px system-ui, sans-serif`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+      const lineas = ['Punto más congestionado', dg.corto], w = Math.max(...lineas.map(l => ctx.measureText(l).width)) + 14 * px, h = tam * 2.9;
+      const bx = dg.x + R + 6 * px, by = dg.y - h / 2;
+      ctx.beginPath(); ctx.moveTo(dg.x + R, dg.y); ctx.lineTo(bx, dg.y); ctx.stroke();
+      ctx.fillStyle = '#d62828'; ctx.beginPath(); ctx.roundRect(bx, by, w, h, 5 * px); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.fillText(lineas[0], bx + 7 * px, by + tam * 0.85);
+      ctx.font = `500 ${tam * 0.92}px system-ui, sans-serif`; ctx.fillText(lineas[1], bx + 7 * px, by + tam * 2.05);
+    }
   }
 }
 export { DT };

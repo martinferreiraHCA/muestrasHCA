@@ -368,7 +368,7 @@ function tiempoSolo() {
   return soloCache.r;
 }
 function simCrear() {
-  simPausar(); if (vistaSim) ui.pista(''); sim = nivel ? new Simulacion(nivel, proyecto(), parSim()) : null; simComp = null;
+  simPausar(); simFix = null; if (vistaSim) ui.pista(''); sim = nivel ? new Simulacion(nivel, proyecto(), parSim()) : null; simComp = null;
   if (vistaSim) { pintarPanel(); P.pedir(); }
 }
 function simPausar() { simCorre = false; cancelAnimationFrame(simRaf); const b = $('btnSimPlay'); if (b) b.textContent = '▶ Simular'; }
@@ -429,7 +429,13 @@ function pintarEstadoSim() {
     ? `<p class="ayuda alerta">No alcanza el turno de ${Math.round(dur)} min: la última persona sale ${Math.round(tarde)} min después. Probá con menos padres por turno, menos tiempo por stand o más turnos.</p>`
     : `<p class="ayuda">El turno de ${Math.round(dur)} min alcanza: todos terminan ${Math.round(-tarde)} min antes.</p>`) : ''}
   ${r.apurados ? `<p class="ayuda alerta">${r.apurados} persona${r.apurados > 1 ? 's no llegaron' : ' no llegó'} a ver todos los stands en el tiempo de visita.</p>` : ''}
-  ${r.terminada && r.critico && r.pctAglom > 2 ? '<p class="ayuda">El círculo rojo punteado marca el punto más congestionado: conviene ensanchar ese paso o separar los puestos cercanos.</p>' : ''}
+  ${(() => { const dg = r.terminada && sim.diagnostico(); if (!dg) return r.terminada ? '<p class="ayuda ok">No hay puntos de aglomeración: la gente circula sin trabarse.</p>' : '';
+    return `<div class="diag"><h3 class="sub"><span class="circ"></span>Punto más congestionado</h3>
+      <p class="ayuda">Es el círculo rojo punteado del plano: el lugar donde la gente pasó más tiempo apretada (2 o más personas por m²). ${esc(dg.causa)}</p>
+      <p class="ayuda"><b>Qué podés hacer:</b></p>
+      <ul class="sugs">${dg.sugerencias.map(([f, t]) => `<li>${esc(t)}${f ? ` <button data-fix="${f}">Aplicar</button>` : ''}</li>`).join('')}</ul>
+      <button data-fix="auto" class="primario ancho">Probar y dejar la mejor</button>
+      ${simFix ? `<p class="ayuda ${simFix.mejoro ? 'ok' : ''}" style="margin-top:8px">${esc(simFix.texto)}</p>` : ''}</div>`; })()}
   ${sim.paradas.length ? `<p class="ayuda" style="margin-top:8px">Visitas por stand: ${sim.paradas.map(p => `${esc(p.nombre)} <b>${p.visitas}</b>`).join(' · ')}</p>` : ''}`;
 }
 const DINAMICAS = [
@@ -494,6 +500,33 @@ function pintarPanelSim() {
   pintarEstadoSim();
 }
 /** Calcula toda la simulación de una vez, sin animarla. */
+// ---------- arreglos para el punto más congestionado ----------
+let simFix = null;
+const ARREGLOS = {
+  llegada: q => ({ llegada: Math.min(q.durTurno ? Math.round(q.durTurno) : 240, Math.max(q.llegada + 2, q.llegada * 2)) }),
+  tandas: q => ({ tandas: true, tandaTam: Math.max(5, Math.round(q.visitantes / 5)), tandaCada: Math.max(2, Math.round(q.llegada / 4)) }),
+  guiado: () => ({ modo: 'guiado' }),
+  permanencia: q => ({ permanencia: Math.max(10, Math.round(q.permanencia * 0.75)) }),
+};
+const NOMBRE_ARREGLO = { llegada: 'llegada más repartida', tandas: 'entrada por tandas', guiado: 'recorrido guiado', permanencia: 'menos tiempo por stand' };
+async function simArreglar(cual) {
+  const q = parSim(), antes = sim.resumen();
+  aviso('Probando…'); await new Promise(f => setTimeout(f, 30));
+  const probar = c => new Simulacion(nivel, proyecto(), { ...q, ...c }).completar(4 * 3600);
+  let cambios, despues, nombre;
+  if (cual === 'auto') {          // se prueban las que propone el diagnóstico y se queda con la que menos aglomera
+    const op = sim.diagnostico().sugerencias.map(s => s[0]).filter(Boolean).map(k => ({ k, c: ARREGLOS[k](q) })).map(o => ({ ...o, r: probar(o.c) }));
+    const m = op.reduce((a, b) => (b.r.pctAglom + b.r.densMax) < (a.r.pctAglom + a.r.densMax) ? b : a);
+    cambios = m.c; despues = m.r; nombre = NOMBRE_ARREGLO[m.k];
+  } else { cambios = ARREGLOS[cual](q); despues = probar(cambios); nombre = NOMBRE_ARREGLO[cual]; }
+  const mejoro = despues.pctAglom + despues.densMax < antes.pctAglom + antes.densMax - 0.2, coma = v => v.toFixed(1).replace('.', ',');
+  const fix = { mejoro, texto: mejoro
+    ? `Apliqué «${nombre}»: la aglomeración bajó de ${coma(antes.pctAglom)} % a ${coma(despues.pctAglom)} % del tiempo y la densidad máxima de ${coma(antes.densMax)} a ${coma(despues.densMax)} pers./m². La visita por persona pasó de ${mmss(antes.tiempoProm)} a ${mmss(despues.tiempoProm)} min.`
+    : `Probé «${nombre}» y no mejora (${coma(despues.pctAglom)} % contra ${coma(antes.pctAglom)} %), así que no cambié nada. Acá el problema es de espacio: conviene mover o separar los puestos.` };
+  if (mejoro) { marcar(); proyecto().sim = { ...(proyecto().sim || {}), ...cambios }; avisar('sim'); }
+  simFix = fix; sim = new Simulacion(nivel, proyecto(), parSim()); sim.completar(4 * 3600);
+  pintarPanel(); P.pedir(); finSim();
+}
 const finSim = () => { const r = sim.resumen(); ui.pista(`Se muestra el momento de mayor carga (${proyecto().horaInicio ? reloj(r.tPico) : 'minuto ' + mmss(r.tPico)}): ${r.maxAdentro} padres a la vez. Verde: en un stand · azul: caminando · rojo: apretados · violeta: esperando · naranja: estudiantes.`); };
 async function simYa() {
   simPausar(); simCrear();
@@ -818,7 +851,9 @@ function conectar() {
   $('btnSolPlay').onclick = solAlternar; $('btnEncuadrar3').onclick = P.encuadrar;
   $('btnSolMuestra').onclick = () => { const h = horaDec(proyecto().horaInicio); if (h === null) return aviso('Cargá primero la hora de inicio de la muestra.'); $('solHora').value = h; solPoner({ hora: h, fecha: proyecto().fecha || solFecha() }); $('solFecha').value = solFecha(); solTexto(); };
   $('btnSimPlay').onclick = simAlternar; $('btnSimReset').onclick = () => { simCrear(); };
-  $('selSimMapa').onchange = () => P.pedir(); $('btnSimComparar').onclick = simComparar; $('btnSimYa').onclick = simYa; $('btnEncuadrar2').onclick = P.encuadrar;
+  $('selSimMapa').onchange = () => P.pedir(); $('btnSimComparar').onclick = simComparar;
+  $('panelDer').addEventListener('click', e => { const b = e.target.closest('[data-fix]'); if (b) simArreglar(b.dataset.fix); });
+  $('btnSimYa').onclick = simYa; $('btnEncuadrar2').onclick = P.encuadrar;
   $('btnDeshacer').onclick = () => E.deshacer(); $('btnRehacer').onclick = () => E.rehacer();
   $('btnPDF').onclick = exportarPDF;
   $('inNombre').oninput = e => { proyecto().nombre = e.target.value; avisar('nombre'); };

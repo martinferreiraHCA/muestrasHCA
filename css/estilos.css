@@ -169,3 +169,9 @@ button.q { width: 15px; height: 15px; padding: 0; margin: 0 0 0 4px; border-radi
 button.q:hover { background: var(--acento); color: #fff; border-color: var(--acento); }
 .globo { position: fixed; z-index: 80; width: 280px; background: #1c2430; color: #fff; border-radius: 9px; padding: 10px 12px; font-size: 12.5px; line-height: 1.45; box-shadow: 0 8px 28px rgba(0,0,0,.3); display: none; }
 .globo p { margin: 0; } .globo .ej { margin-top: 7px; padding-top: 7px; border-top: 1px solid rgba(255,255,255,.2); color: #dbe4f0; }
+
+.diag { margin-top: 10px; padding: 9px 10px; border: 1px solid #f1c0c0; background: #fff6f6; border-radius: 8px; }
+.diag h3.sub { margin-top: 0; color: #b42318; } .diag .circ { width: 12px; height: 12px; border-radius: 50%; border: 2px dashed #d62828; }
+ul.sugs { margin: 4px 0 8px; padding-left: 16px; font-size: 12px; line-height: 1.45; color: #3b4453; }
+ul.sugs li { margin-bottom: 5px; } ul.sugs button { padding: 0 6px; font-size: 11px; margin-left: 2px; }
+.ayuda.ok { color: #1a7f45; }
