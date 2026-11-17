@@ -1,7 +1,7 @@
 // Interfaz: une el estado, el editor 2D, la vista isométrica y la exportación.
 import * as E from './estado.js';
 import { proyecto, marcar, avisar, uid } from './estado.js';
-import { cargarIndice, cargarNivel as cargarCrudo, nivelVisible, edificiosOcultos, espaciosDe, espaciosElegidos, geo } from './niveles.js';
+import { cargarIndice, cargarNivel as cargarCrudo, nivelVisible, edificiosOcultos, zonasLibres, espaciosDe, espaciosElegidos, geo } from './niveles.js';
 import * as SOL from './sol.js';
 import { leerEquipos, distribuir } from './equipos.js';
 import { armarSala, FORMAS } from './asientos.js';
@@ -149,6 +149,8 @@ async function irEtapa(n, mover = true) {
   }
   if (n === 1) $('detEdificios').open = true;
   if (e.id === 'equipos') pintarEquipos();
+  // en los pasos de ubicar cosas se ven las zonas que hay que dejar libres
+  ui.zonas = ['equipos', 'muebles'].includes(e.id) ? zonasLibres(nivel, P.itemsNivel()) : null;
   if (e.id === 'muebles') pintarSala();
   pintarGuia();
 }
@@ -992,6 +994,7 @@ async function arrancar() {
     [...ui.seleccion].forEach(id => { if (!ids.has(id)) ui.seleccion.delete(id); });
     if (crudo) { const f = nivelVisible(crudo, proyecto()); if (f !== nivel) { nivel = f; ui.nivel = f; solTabla = null; } }
     pintarBarra(); solCache = null; pintarGuia();
+    if (ui.zonas && nivel) ui.zonas = zonasLibres(nivel, P.itemsNivel());
     if (vistaFol) { pintarFolleto(); if (que === 'folleto') return; }
     if (que !== 'nombre' && que !== 'sol' && que !== 'etapa' && sim) { sim = null; simComp = null; simPausar(); if (vistaSim) simCrear(); }
     if (que !== 'items' && que !== 'nombre') pintarEspacios();

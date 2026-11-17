@@ -1,6 +1,6 @@
 // Armado automático de un salón: filas de auditorio, anfiteatro, aula, mesas en U, mesas redondas o ronda.
 import { Simulacion } from './sim.js';
-import { puntoEnPoly } from './niveles.js';
+import { puntoEnPoly, zonasLibres } from './niveles.js';
 import { itemDesdeTipo } from './estado.js';
 
 export const FORMAS = {
@@ -23,7 +23,8 @@ export function armarSala(nivel, proy, esp, cat, { forma = 'auditorio', personas
   const base = { ...proy, items: proy.items.filter(i => i.nivel === nivel.id && i.auto !== 'sala') };
   const xs = esp.poly.map(q => q[0]), ys = esp.poly.map(q => q[1]);
   const G = new Simulacion(nivel, base, {}, 1, { x0: Math.min(...xs) - 2, y0: Math.min(...ys) - 2, x1: Math.max(...xs) + 2, y1: Math.max(...ys) + 2 });
-  const libre = (x, y) => { const gx = Math.floor((x - G.x0) / 0.2), gy = Math.floor((y - G.y0) / 0.2); return gx >= 0 && gy >= 0 && gx < G.gw && gy < G.gh && !G.bloq[gy * G.gw + gx] && puntoEnPoly(x, y, esp.poly); };
+  const zonas = zonasLibres(nivel, base.items).map(([x, y, r]) => [x, y, r - 0.2]);          // puertas, entradas y salidas quedan despejadas
+  const libre = (x, y) => { if (zonas.some(z => Math.hypot(z[0] - x, z[1] - y) < z[2])) return false; const gx = Math.floor((x - G.x0) / 0.2), gy = Math.floor((y - G.y0) / 0.2); return gx >= 0 && gy >= 0 && gx < G.gw && gy < G.gh && !G.bloq[gy * G.gw + gx] && puntoEnPoly(x, y, esp.poly); };
   const pu = esp.poly.map(q => q[0] * u[0] + q[1] * u[1]), pf = esp.poly.map(q => q[0] * f[0] + q[1] * f[1]);
   const u0 = Math.min(...pu), u1 = Math.max(...pu), vmax = Math.max(...pf), fondo = vmax - Math.min(...pf), uc = (u0 + u1) / 2, ancho = u1 - u0;
   const P = (uu, s) => [u[0] * uu + f[0] * (vmax - s), u[1] * uu + f[1] * (vmax - s)];       // (a lo ancho, distancia al frente) -> plano

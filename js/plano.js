@@ -203,6 +203,11 @@ function dibujar() {
     ctx.fillRect(a[0], a[1], b[0] - a[0], b[1] - a[1]); ctx.strokeRect(a[0], a[1], b[0] - a[0], b[1] - a[1]);
     cota(a, [b[0], a[1]]); cota([b[0], a[1]], b);
   }
+  if (ui.zonas?.length) {          // zonas que se dejan libres delante de puertas, entradas y salidas
+    ctx.fillStyle = 'rgba(214,40,40,.10)'; ctx.strokeStyle = 'rgba(214,40,40,.5)'; ctx.lineWidth = px; ctx.setLineDash([4 * px, 3 * px]);
+    for (const [x, y, r] of ui.zonas) { ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill(); ctx.stroke(); }
+    ctx.setLineDash([]);
+  }
   if (ui.notas && k > 3.5) {          // referencias escritas en el plano (a construir, a demoler, existente…)
     const tam = Math.max(10 * px, Math.min(0.5, 11.5 * px));
     ctx.font = `italic 600 ${tam}px system-ui, sans-serif`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';

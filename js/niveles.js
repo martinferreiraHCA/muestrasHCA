@@ -30,6 +30,7 @@ export async function cargarNivel(info) {
   const n = {
     id: d.id, nombre: d.nombre, ancho: d.ancho / 100, alto: d.alto / 100,
     muros: aMetros(d.muros), aberturas: aMetros(d.aberturas), barreras: aMetros(d.barreras || []), pisos: d.pisos || null,
+    puertas: (d.puertas || []).map(q => q.map(v => v / 100)),
     notas: (d.notas || []).map(q => ({ x: q.x / 100, y: q.y / 100, t: q.t })),
     edif: d.edif || null, huellasEdif: d.huellasEdif || [],
     huellas: (d.huellas || []).map(h => h.map(p => [p[0] / 100, p[1] / 100])), arboles: (d.arboles || []).map(a => a.map(v => v / 100)), detalle: aMetros(d.detalle),
@@ -44,6 +45,18 @@ export async function cargarNivel(info) {
   cache.set(info.id, n);
   return n;
 }
+
+/**
+ * Zonas que tienen que quedar libres: delante de cada puerta y alrededor de entradas, salidas y lugares de
+ * espera. Devuelve círculos [x, y, radio] en metros.
+ */
+export function zonasLibres(nivel, items) {
+  const z = nivel.puertas.map(([x, y, r]) => [x, y, r + 0.8]);
+  for (const it of items) if (['entrada', 'salida', 'acceso', 'espera'].includes(it.tipo)) z.push([it.x, it.y, Math.hypot(it.w, it.d) / 2 + (it.tipo === 'espera' ? 0.3 : 1.2)]);
+  return z;
+}
+/** ¿El rectángulo {x0, y0, x1, y1} toca alguno de los círculos? */
+export const tocaZona = (r, zonas) => zonas.some(([x, y, rad]) => Math.hypot(x - Math.max(r.x0, Math.min(x, r.x1)), y - Math.max(r.y0, Math.min(y, r.y1))) < rad);
 
 /** Ids de los edificios que no se muestran en esta muestra. Por defecto, los que todavía son proyecto. */
 export const edificiosOcultos = proy => proy.edificiosOcultos ?? geo.edificios.filter(e => e.proyecto).map(e => e.id);
@@ -63,6 +76,7 @@ export function nivelVisible(n, proy) {
   else {
     const cortar = k => { const S = n[k], E = n.edif[k], o = []; for (let i = 0, j = 0; i < S.length; i += 4, j++) if (!oc.has(E[j])) o.push(S[i], S[i + 1], S[i + 2], S[i + 3]); return new Float32Array(o); };
     f = { ...n, muros: cortar('muros'), aberturas: cortar('aberturas'), barreras: cortar('barreras'), detalle: cortar('detalle'),
+      puertas: n.edif.puertas ? n.puertas.filter((_, j) => !oc.has(n.edif.puertas[j])) : n.puertas,
       pisos: n.pisos ? n.pisos.filter((_, j) => !oc.has(n.edif.muros[j])) : null,
       locales: n.locales.filter(l => !oc.has(l.edif) && extra(l)), huellas: n.huellas.filter((_, i) => !oc.has(n.huellasEdif[i])) };
     f.paths = { muros: aPath(f.muros), aberturas: aPath(f.aberturas), detalle: aPath(f.detalle) };

@@ -2,7 +2,7 @@
 // Cada equipo reserva el lugar de su mueble y de sus estudiantes; se ubican contra las paredes,
 // lo más separados posible, y en islas solo si no queda pared.
 import { Simulacion } from './sim.js';
-import { espaciosElegidos, puntoEnPoly, margenEstudiantes } from './niveles.js';
+import { espaciosElegidos, puntoEnPoly, margenEstudiantes, zonasLibres, tocaZona } from './niveles.js';
 import { itemDesdeTipo } from './estado.js';
 
 const C = 0.2;                       // misma grilla que el simulador
@@ -61,6 +61,22 @@ export async function distribuir(nivel, proy, equipos, tipo, porMesa = 0, simula
     return { w: Math.round((ancho + 2 * M.lados) * 5) / 5, d: Math.round((tipo.d + M.atras + M.frente) * 5) / 5, M, mesas, ancho };
   };
 
+  // Nunca delante de una puerta, entrada o salida. Además de las puertas del plano, se buscan los vanos sin
+  // puerta: tramos del borde de un salón donde no hay muro.
+  const zonas = zonasLibres(nivel, base.items);
+  const muroCerca = (x, y, t) => { for (let dy = -t; dy <= t + 1e-9; dy += C) for (let dx = -t; dx <= t + 1e-9; dx += C) if (!libre0(x + dx, y + dy)) return true; return false; };
+  const libre0 = (x, y) => { const gx = Math.floor((x - G.x0) / C), gy = Math.floor((y - G.y0) / C); return !(gx >= 0 && gy >= 0 && gx < G.gw && gy < G.gh) || !G.bloq[gy * G.gw + gx]; };
+  for (const e of espacios) {
+    const tol = e.exterior || e.propio ? 0.6 : 0.4, pts = [];
+    e.poly.forEach((p, i) => { const q = e.poly[(i + 1) % e.poly.length], l = Math.hypot(q[0] - p[0], q[1] - p[1]), n = Math.max(1, Math.round(l / C)); for (let k = 0; k < n; k++) { const x = p[0] + (q[0] - p[0]) * k / n, y = p[1] + (q[1] - p[1]) * k / n; pts.push([x, y, muroCerca(x, y, tol)]); } });
+    const N = pts.length; if (!pts.some(p => p[2])) continue;                       // sin muros (espacio abierto): no hay vanos que cuidar
+    const ini = pts.findIndex(p => p[2]);
+    for (let k = 0, hueco = []; k <= N; k++) {
+      const p = pts[(ini + k) % N];
+      if (!p[2]) hueco.push(p);
+      else { if (hueco.length * C >= 0.6 && hueco.length * C <= 3.2) for (const h of hueco) zonas.push([h[0], h[1], 1.0]); hueco = []; }
+    }
+  }
   const cache = new Map();
   /** Lugares posibles para una huella w × d en un espacio: contra las paredes (en orden, dando la vuelta) y en islas. */
   function sitios(e, w, d) {
@@ -77,7 +93,7 @@ export async function distribuir(nivel, proy, equipos, tipo, porMesa = 0, simula
           const px = hor ? r.x0 + t : (fx > 0 ? r.x0 - 0.25 : r.x1 + 0.25), py = hor ? (fy > 0 ? r.y0 - 0.25 : r.y1 + 0.25) : r.y0 + t;
           tot++; if (!libre(px, py) || !puntoEnPoly(px, py, e.poly)) pared++;
         }
-        if (pared < tot * 0.75 || !dentroLibre(r, e.poly) || !dentroLibre(conFrente(r, rot, FRENTE), e.poly)) continue;
+        if (pared < tot * 0.75 || !dentroLibre(r, e.poly) || !dentroLibre(conFrente(r, rot, FRENTE), e.poly) || tocaZona(conFrente(r, rot, FRENTE), zonas)) continue;
         cand.push({ cx, cy, rot, r });
       }
       const along = c => (fx === 0 ? c.cx : c.cy);
@@ -86,7 +102,7 @@ export async function distribuir(nivel, proy, equipos, tipo, porMesa = 0, simula
       per.push(...cand);
     }
     const isl = [];
-    for (let cy = by0; cy <= by1; cy += 0.4) for (let cx = bx0; cx <= bx1; cx += 0.4) { const r = rect(cx, cy, 0); if (dentroLibre(r, e.poly, PASILLO)) isl.push({ cx, cy, rot: 0, r, isla: true }); }
+    for (let cy = by0; cy <= by1; cy += 0.4) for (let cx = bx0; cx <= bx1; cx += 0.4) { const r = rect(cx, cy, 0); if (dentroLibre(r, e.poly, PASILLO) && !tocaZona({ x0: r.x0 - 0.6, y0: r.y0 - 0.6, x1: r.x1 + 0.6, y1: r.y1 + 0.6 }, zonas)) isl.push({ cx, cy, rot: 0, r, isla: true }); }
     const res = { per, isl }; cache.set(clave, res); return res;
   }
   // dos puestos enfrentados pueden compartir el pasillo, pero ninguno invade el frente del otro

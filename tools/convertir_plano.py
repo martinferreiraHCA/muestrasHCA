@@ -34,6 +34,7 @@ X0, Y0, X1, Y1 = 1095, 80, 1505, 165
 blocks = json.load(open(BLK))
 segs = {'m': [], 'a': [], 'd': []}   # (x1,y1,x2,y2)
 arbol_pts = []                        # puntos de dibujo de árboles (capa 0 suelta y bloques 'arbol')
+puertas_d = []                        # arcos de puerta dibujados en capas de detalle (se validan contra los muros)
 puertas = []                          # (cx,cy,r,a0,a1) arcos de puertas
 textos = []                           # (x,y,h,texto)
 
@@ -114,10 +115,10 @@ def emit(e, T, layer, depth=0, arbol=False):
         a0, a1 = e.get('startAngle', 0), e.get('endAngle', 2*math.pi)
         if mx < 0: a0, a1 = math.pi-a1, math.pi-a0
         pts = arc_pts(c['x']*mx, c['y'], r, a0, a1)
-        if t == 'ARC' and k in ('a', 'm') and 0.55 <= r <= 1.3:
+        if t == 'ARC' and k in ('a', 'm', 'd') and 0.55 <= r <= 1.3:
             sw = (a1-a0) % (2*math.pi)
             if 1.2 < sw < 1.9:
-                h = ap(T, c['x']*mx, c['y']); puertas.append((h, ap(T, *pts[0]), ap(T, *pts[-1])))
+                h = ap(T, c['x']*mx, c['y']); (puertas if k != 'd' else puertas_d).append((h, ap(T, *pts[0]), ap(T, *pts[-1])))
     elif t == 'ELLIPSE':
         c = e['center']; m = e['majorAxisEndPoint']; ra = math.hypot(m['x'], m['y']); rb = ra*e['axisRatio']
         rot = math.atan2(m['y'], m['x']); a0, a1 = e['startAngle'], e['endAngle']
@@ -293,6 +294,15 @@ for nid, nombre, (ax, ay, bx, by) in NIVELES:
     pu = [(h, math.hypot(a[0]-h[0], a[1]-h[1]), a, b) for h, a, b in puertas if ax <= h[0] <= bx and ay <= h[1] <= by]
     for h, r, a, b in pu:
         cv2.line(img, px(*h), px(*a), 255, 2); cv2.line(img, px(*h), px(*b), 255, 2)
+    # puertas dibujadas en capas de detalle: valen si la bisagra está pegada a un muro y no repiten una ya detectada
+    puertas_extra = []
+    for h, a_, b_ in puertas_d:
+        if not (ax <= h[0] <= bx and ay <= h[1] <= by): continue
+        qx, qy = px(*h)
+        if not (0 <= qx < iw and 0 <= qy < ih and cerca[qy, qx]): continue
+        if any(math.hypot(h[0]-g[0][0], h[1]-g[0][1]) < 0.5 for g in pu): continue
+        q = [cm(tx(h[0])), cm(ty(h[1])), cm(math.hypot(a_[0]-h[0], a_[1]-h[1]))]
+        if not any(abs(q[0]-e[0]) < 30 and abs(q[1]-e[1]) < 30 for e in puertas_extra): puertas_extra.append(q)
     # barreras para la simulación de circulación: ventanas sí, puertas no
     barreras = []
     for x1, y1, x2, y2 in S['a']:
@@ -513,6 +523,8 @@ for nid, nombre, (ax, ay, bx, by) in NIVELES:
         'muros': pack(S['m']), 'aberturas': pack(S['a']), 'barreras': pack(barreras), 'detalle': pack(S['d'], 0.12),
         'etiquetas': [{'x': cm(e[0]), 'y': cm(e[1]), 't': e[2]+(' '+e[3] if e[3] else '')} for e in etiquetas],
         'locales': locales, 'huellas': huellas, 'arboles': arboles,
+        # puertas: bisagra y radio de la hoja (para no poner nada delante)
+        'puertas': [[cm(tx(h[0])), cm(ty(h[1])), cm(r)] for h, r, _, _ in pu]+puertas_extra,
         'notas': [{'x': cm(x), 'y': cm(y), 't': t} for x, y, h, t in T if NOTA.search(t) and 0 < x < W and 0 < y < H],
     }
     if nid != 'ss':
@@ -520,6 +532,7 @@ for nid, nombre, (ax, ay, bx, by) in NIVELES:
             a = np.array(seg, float).reshape(-1, 4)/100
             return [edif_en((q[0]+q[2])/2, (q[1]+q[3])/2, nid) for q in a]
         data['edif'] = {k: ed(data[k]) for k in ('muros', 'aberturas', 'barreras', 'detalle')}
+        data['edif']['puertas'] = [edif_en(x/100, y/100, nid) for x, y, r in data['puertas']]
         for l in locales:
             if 'edif' not in l: l['edif'] = edif_en(l['cx']/100, l['cy']/100, nid)
         h_manual = {}
