@@ -2,7 +2,7 @@
 // La distribución arma dos alternativas (contra las paredes / en islas) y, si hay una Entrada
 // marcada, las prueba con el simulador de circulación y se queda con la que circula mejor.
 import { Simulacion, esEntrada } from './sim.js';
-import { espaciosElegidos, puntoEnPoly } from './niveles.js';
+import { espaciosElegidos, puntoEnPoly, grupoEstudiantes } from './niveles.js';
 import { itemDesdeTipo } from './estado.js';
 
 const C = 0.2;                       // misma grilla que el simulador
@@ -30,7 +30,7 @@ export function leerEquipos(texto, porDefecto = 4) {
 }
 
 /** Fondo extra que hay que reservar detrás del mueble para los estudiantes (las mesas; el stand los tiene adentro). */
-const detras = (tipo, est) => tipo.modelo === 'stand' ? 0 : est > 0 ? 0.35 + 0.55 * Math.ceil(est / Math.max(1, Math.floor((tipo.w - 0.3) / 0.55))) : 0;
+const detras = (tipo, est) => tipo.modelo === 'stand' ? 0 : grupoEstudiantes(tipo.w, est).fondo;
 
 /**
  * Distribuye los equipos en los lugares elegidos del nivel.
@@ -117,7 +117,8 @@ export function distribuir(nivel, proy, equipos, tipo) {
       else if (l.per.length >= n) sitios = repartir(l.per, n);              // bien separados a lo largo de las paredes
       else sitios = [...l.per, ...repartir(l.islTrasPer, n - l.per.length)];
       asign[i].forEach((q, k) => {
-        const s = sitios[k], [fx, fy] = FR[s.rot], corr = (d - tipo.d) / 2;       // el mueble va adelante; atrás, los estudiantes
+        // cada mesa va tan cerca de la pared como le permite su propio grupo de estudiantes
+        const s = sitios[k], [fx, fy] = FR[s.rot], corr = (d - tipo.d) / 2 - (detras(tipo, estMax) - detras(tipo, q.estudiantes));       // el mueble va adelante; atrás, los estudiantes
         const it = itemDesdeTipo(tipo, Math.round((s.cx + fx * corr) * 100) / 100, Math.round((s.cy + fy * corr) * 100) / 100, nivel.id);
         Object.assign(it, { rot: s.rot, etiqueta: q.nombre, estudiantes: q.estudiantes, equipo: true });
         items.push(it);

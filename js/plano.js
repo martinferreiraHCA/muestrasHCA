@@ -133,7 +133,8 @@ export function dibujarItem(c, it, k, sel) {
       if (r > 90 && r <= 270) c.rotate(Math.PI);
       c.font = `600 ${t.tam}px system-ui, sans-serif`; c.textAlign = 'center'; c.textBaseline = 'middle';
       c.fillStyle = (it.modelo === 'zona' || it.modelo === 'stand' || it.modelo === 'techo') ? '#1c2430' : it.modelo === 'texto' ? it.color : contraste(it.color);
-      t.lineas.forEach((l, i) => c.fillText(l, 0, (i - (t.lineas.length - 1) / 2) * t.tam * 1.12));
+      const corrY = it.modelo === 'stand' && it.estudiantes > 0 ? (r > 90 && r <= 270 ? -1 : 1) * d * 0.2 : 0;      // el fondo del stand es de los estudiantes
+      t.lineas.forEach((l, i) => c.fillText(l, 0, corrY + (i - (t.lineas.length - 1) / 2) * t.tam * 1.12));
     }
   }
   c.restore();

@@ -117,15 +117,27 @@ export function aLocal(it, x, y) {
   const a = -it.rot * Math.PI / 180, c = Math.cos(a), s = Math.sin(a), dx = x - it.x, dy = y - it.y;
   return [dx * c - dy * s, dx * s + dy * c];
 }
-/** Posiciones (en metros) de los estudiantes de un puesto: adentro del stand, o detrás de la mesa. */
+const SEP_EST = 0.46, FILA_EST = 0.4;           // separación entre estudiantes y entre filas (m)
+/** Cómo se agrupan `n` estudiantes en un ancho `w`: un bloque lo más compacto posible, no una fila. */
+export function grupoEstudiantes(w, n) {
+  const cols = Math.max(1, Math.min(Math.floor((w + 0.25) / SEP_EST), Math.ceil(Math.sqrt(n))));
+  const filas = Math.ceil(n / cols);
+  return { cols, filas, fondo: n > 0 ? 0.3 + FILA_EST * (filas - 1) + 0.25 : 0 };
+}
+/**
+ * Posiciones (en metros) de los estudiantes de un puesto. Van todos juntos detrás de la mesa, en un
+ * bloque compacto y centrado (filas intercaladas); en un stand, adentro, contra el fondo.
+ */
 export function posEstudiantes(it) {
   const n = it.estudiantes | 0; if (n <= 0) return [];
-  const a = it.rot * Math.PI / 180, c = Math.cos(a), s = Math.sin(a), sep = 0.55;
-  const porFila = Math.max(1, Math.floor((it.w - 0.3) / sep)), y0 = it.modelo === 'stand' ? -it.d / 2 + 0.5 : -it.d / 2 - 0.4, dir = it.modelo === 'stand' ? 1 : -1;
-  const r = [];
+  const a = it.rot * Math.PI / 180, c = Math.cos(a), s = Math.sin(a), { cols, filas } = grupoEstudiantes(it.w, n);
+  const stand = it.modelo === 'stand';
+  // primera fila: pegada a la espalda de la mesa; en el stand, pegada al panel del fondo
+  const y0 = stand ? -it.d / 2 + 0.35 : -it.d / 2 - 0.3, dir = stand ? 1 : -1, r = [];
   for (let i = 0; i < n; i++) {
-    const fila = Math.floor(i / porFila), enFila = Math.min(porFila, n - fila * porFila), k = i % porFila;
-    const lx = (k - (enFila - 1) / 2) * sep, ly = y0 + dir * fila * sep;
+    const f = Math.floor(i / cols), enFila = Math.min(cols, n - f * cols), k = i % cols;
+    const corr = enFila === cols && f % 2 === 1 && filas > 1 && cols > 1 ? SEP_EST / 4 : 0;       // filas intercaladas
+    const lx = (k - (enFila - 1) / 2) * SEP_EST + corr * (f % 4 === 1 ? 1 : -1), ly = y0 + dir * f * FILA_EST;
     r.push([it.x + lx * c - ly * s, it.y + lx * s + ly * c]);
   }
   return r;
