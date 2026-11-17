@@ -65,6 +65,7 @@ export function fijarHerramienta(h) {
     mover: '', espacios: 'Tocá un salón para elegirlo o quitarlo.',
     dibujar: 'Tocá para marcar cada esquina (se pega a las esquinas de los muros). Doble clic o Enter para cerrar el espacio. Esc cancela.',
     medir: 'Tocá dos puntos para medir la distancia.',
+    espera: 'Tocá en el plano el lugar donde esperan los padres hasta que les toca entrar.',
     acceso: 'Tocá en el plano el punto de partida del recorrido (por ejemplo, el portón del colegio).',
     entrada: 'Tocá en el plano el lugar por donde ENTRA la gente.', salida: 'Tocá en el plano el lugar por donde SALE la gente.',
     rect: 'Arrastrá de una esquina a la opuesta para dibujar un espacio rectangular.',
@@ -122,6 +123,9 @@ export function dibujarItem(c, it, k, sel) {
     c.strokeStyle = it.color; c.lineWidth = Math.max(0.08, 3 * px); c.lineJoin = 'miter'; c.stroke();
   } else {
     forma(); c.globalAlpha = .9; c.fill(); c.globalAlpha = 1; c.stroke();
+    for (let m = 1; m < (it.mesas | 0); m++) {          // varias mesas juntas: se marca la unión
+      c.beginPath(); c.moveTo(-w / 2 + m * w / it.mesas, -d / 2); c.lineTo(-w / 2 + m * w / it.mesas, d / 2); c.strokeStyle = 'rgba(0,0,0,.45)'; c.lineWidth = px; c.stroke();
+    }
     if (it.modelo === 'silla') {
       c.beginPath(); c.moveTo(-w / 2, -d / 2 + d * 0.16); c.lineTo(w / 2, -d / 2 + d * 0.16); c.strokeStyle = 'rgba(0,0,0,.5)'; c.lineWidth = px; c.stroke();
     }
@@ -403,7 +407,7 @@ function alSoltar(e) {
   else if (h === 'espacios') {
     const esp = espacioEn(a.x, a.y);
     if (esp) { marcar(); const p = proyecto(); p.espacios = p.espacios.includes(esp.id) ? p.espacios.filter(i => i !== esp.id) : [...p.espacios, esp.id]; avisar('espacios'); }
-  } else if (h === 'entrada' || h === 'salida' || h === 'acceso') agregar(catalogo().find(c => c.id === h), iman(a.x), iman(a.y));
+  } else if (h === 'entrada' || h === 'salida' || h === 'acceso' || h === 'espera') agregar(catalogo().find(c => c.id === h), iman(a.x), iman(a.y));
   else if (h === 'forma') { ui.activo = espacioEn(a.x, a.y)?.id || null; pedir(); }
   else if (h === 'dibujar') {
     const q = imanPunto(a.x, a.y);

@@ -9,12 +9,16 @@ const DT = 0.12;          // paso de simulación (s)
 const AGLOM = 2;          // personas/m² a partir de las cuales se considera aglomeración
 
 // llegada: minutos durante los que van entrando los visitantes; tiempoVisita: tope por persona en minutos (0 = sin tope)
-export const SIM_DEF = { visitantes: 80, porMinuto: 20, llegada: 0, tiempoVisita: 0, permanencia: 45, paradas: 0, modo: 'libre', velocidad: 1.2 };
+// hijoPrimero: cada visitante va primero al puesto de su hijo. tandas: entran en grupos de `tandaTam` cada
+// `tandaCada` minutos y mientras tanto esperan en el «Lugar de espera» (o en la entrada). seguir: n.º del
+// visitante al que se le dibuja el recorrido (-1 = el del medio).
+export const SIM_DEF = { visitantes: 80, porMinuto: 20, llegada: 0, tiempoVisita: 0, permanencia: 45, paradas: 0, modo: 'libre', velocidad: 1.2,
+  turnos: 1, hijoPrimero: false, tandas: false, tandaTam: 20, tandaCada: 5, seguir: -1 };
 const FIJOS = ['mesa', 'mesa-redonda', 'caja', 'cilindro', 'panel', 'banco', 'zona'];
 export const esEntrada = it => it.tipo === 'entrada';
 export const esSalida = it => it.tipo === 'salida';
 export function esParada(it) {
-  if (esEntrada(it) || esSalida(it) || it.tipo === 'acceso' || it.modelo === 'persona' || it.modelo === 'texto' || it.modelo === 'silla') return false;
+  if (esEntrada(it) || esSalida(it) || it.tipo === 'acceso' || it.tipo === 'espera' || it.modelo === 'persona' || it.modelo === 'texto' || it.modelo === 'silla') return false;
   return it.parada ?? (it.modelo === 'stand' || (!!it.etiqueta && FIJOS.includes(it.modelo)));
 }
 
@@ -65,6 +69,8 @@ export class Simulacion {
     this.entradas = items.filter(esEntrada).map(it => fuentes(it, 0)).filter(l => l.length);
     const sal = items.filter(esSalida).map(it => fuentes(it, 0.2)).flat();
     this.fSalida = sal.length ? sal : this.entradas.flat();
+    const esp = items.filter(i => i.tipo === 'espera').map(it => fuentes(it, 0)).flat();
+    this.fEspera = esp.length ? esp : this.entradas.flat(); this.hayEspera = esp.length > 0;
     this.paradas = [];
     for (const it of items.filter(esParada)) {
       const f = it.modelo === 'zona' ? fuentes(it, 0)
@@ -81,6 +87,8 @@ export class Simulacion {
 
     this.t = 0; this.agentes = []; this.creados = 0; this.fin = [];
     this.maxAdentro = 0; this.apurados = 0; this.tUltimo = 0;
+    this.proxTanda = 0; this.nTandas = 0; this.esperas = []; this.tParados = []; this.seguido = null;
+    this.nSeguir = this.p.seguir >= 0 ? Math.min(this.p.seguir, this.p.visitantes - 1) : Math.floor(this.p.visitantes / 2);
     this.densMax = 0; this.tAglom = 0; this.tTotal = 0; this.terminada = false;
     for (const [x, y] of this.manuales) this.#nuevo(x, y);
   }
@@ -189,19 +197,26 @@ export class Simulacion {
   }
 
   // ---------- agentes ----------
-  #nuevo(x, y) {
+  #nuevo(x, y, numero = -1) {
     const n = this.paradas.length, cuantas = this.p.paradas > 0 ? Math.min(this.p.paradas, n) : n;
     const a = { x, y, vx: 0, vy: 0, vel: this.p.velocidad * (0.8 + this.rnd() * 0.4), estado: 'camina', destino: -1, espera: 0,
-      vistas: new Set(), faltan: cuantas, paso: 0, t: 0, dens: 0, mejor: Infinity, tMejor: 0 };
-    this.agentes.push(a); this.#elegir(a);
+      vistas: new Set(), faltan: cuantas, paso: 0, t: 0, dens: 0, mejor: Infinity, tMejor: 0, tEsp: 0, tPar: 0, hijo: -1, camino: 0 };
+    if (this.p.hijoPrimero && n) {            // el puesto del hijo: más probable cuantos más estudiantes tiene
+      const pesos = this.paradas.map(p => Math.max(1, p.it.estudiantes | 0)), tot = pesos.reduce((u, v) => u + v, 0);
+      let r = this.rnd() * tot; a.hijo = pesos.findIndex(w => (r -= w) < 0); if (a.hijo < 0) a.hijo = n - 1;
+    }
+    if (numero === this.nSeguir) { a.seguido = true; a.vel = this.p.velocidad; a.rastro = [[x, y]]; this.seguido = a; }
+    this.agentes.push(a);
+    if (this.p.tandas) a.estado = 'espera'; else this.#elegir(a);
   }
   #elegir(a) {
     if (a.destino >= 0) this.paradas[a.destino].ocup--;
     a.destino = -1; a.estado = 'sale'; a.mejor = Infinity; a.tMejor = this.t;
     if (a.faltan <= 0) return;
     const i = this.#idx(a.x, a.y);
-    if (this.orden) {
-      while (a.paso < this.orden.length) { const j = this.orden[a.paso++]; if (isFinite(this.#campoParada(j)[i])) { a.destino = j; break; } }
+    if (a.hijo >= 0 && !a.vistas.has(a.hijo) && isFinite(this.#campoParada(a.hijo)[i])) a.destino = a.hijo;
+    else if (this.orden) {
+      while (a.paso < this.orden.length) { const j = this.orden[a.paso++]; if (!a.vistas.has(j) && isFinite(this.#campoParada(j)[i])) { a.destino = j; break; } }
     } else {
       let mejor = Infinity;
       this.paradas.forEach((p, j) => {
@@ -213,6 +228,7 @@ export class Simulacion {
     }
     if (a.destino >= 0) { a.estado = 'camina'; this.paradas[a.destino].ocup++; }
   }
+  #salio(a) { this.fin.push(a.t); this.esperas.push(a.tEsp); this.tParados.push(a.tPar); if (a.seguido) a.fin = this.t; }
 
   paso() {
     if (this.falta || this.terminada) return;
@@ -221,7 +237,14 @@ export class Simulacion {
     const deben = Math.min(P.visitantes, Math.floor(this.t * P.porMinuto / 60) + 1);
     while (this.creados < deben) {
       const e = this.entradas[Math.floor(this.rnd() * this.entradas.length)], [x, y] = this.#centro(e[Math.floor(this.rnd() * e.length)]);
-      this.#nuevo(x + (this.rnd() - 0.5) * C, y + (this.rnd() - 0.5) * C); this.creados++;
+      this.#nuevo(x + (this.rnd() - 0.5) * C, y + (this.rnd() - 0.5) * C, this.creados); this.creados++;
+    }
+    if (P.tandas) {            // por tandas: sale un grupo del lugar de espera cuando se junta o cuando toca
+      const esp = this.agentes.filter(a => a.estado === 'espera');
+      if (esp.length && this.t >= this.proxTanda && (esp.length >= P.tandaTam || this.creados >= P.visitantes || this.t >= this.proxTanda + P.tandaCada * 60)) {
+        esp.slice(0, P.tandaTam).forEach(a => this.#elegir(a));
+        this.proxTanda = this.t + P.tandaCada * 60; this.nTandas++;
+      }
     }
     // vecinos por grilla de 1 m
     const cubos = new Map(), clave = (x, y) => Math.floor(x) * 4096 + Math.floor(y);
@@ -231,7 +254,7 @@ export class Simulacion {
     if (this.agentes.length > this.maxAdentro) this.maxAdentro = this.agentes.length;
     for (const a of this.agentes) {
       // se le acabó el tiempo de visita: deja lo que falta y va a la salida
-      if (tope && a.estado !== 'sale' && a.t > tope) { a.faltan = 0; this.apurados++; this.#elegir(a); }
+      if (tope && a.estado !== 'sale' && a.estado !== 'espera' && a.t - a.tEsp > tope) { a.faltan = 0; this.apurados++; this.#elegir(a); }
       let n = 1, rx = 0, ry = 0;
       for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
         const l = cubos.get(clave(a.x + dx, a.y + dy)); if (!l) continue;
@@ -242,17 +265,26 @@ export class Simulacion {
           if (d < 0.65) { const f = (0.65 - d) / 0.65 / (d || 0.01); rx += (d ? ex : this.rnd() - 0.5) * f; ry += (d ? ey : this.rnd() - 0.5) * f; }
         }
       }
-      a.dens = n / Math.PI; a.t += dt; this.tTotal += dt;
-      if (a.dens > this.densMax) this.densMax = a.dens;
+      // los que esperan su tanda están juntos a propósito: no cuentan como aglomeración del recorrido
+      const esperando = a.estado === 'espera';
+      a.dens = n / Math.PI; a.t += dt;
+      if (esperando) a.tEsp += dt; else { this.tTotal += dt; if (a.dens > this.densMax) this.densMax = a.dens; }
       const hx = Math.floor((a.x - this.x0) / CH), hy = Math.floor((a.y - this.y0) / CH);
-      if (hx >= 0 && hy >= 0 && hx < this.hw && hy < this.hh) {
+      if (!esperando && hx >= 0 && hy >= 0 && hx < this.hw && hy < this.hh) {
         this.transito[hy * this.hw + hx] += dt;
         if (a.dens >= AGLOM) { this.aglom[hy * this.hw + hx] += dt; this.tAglom += dt; }
       }
       const i = this.#idx(a.x, a.y);
       let dx = 0, dy = 0;
-      if (a.estado === 'parado') {
-        a.espera -= dt;
+      if (esperando) {
+        const campo = this.#campo('w', this.fEspera), d0 = i >= 0 ? campo[i] : Infinity;
+        if (isFinite(d0) && d0 > C * 1.2) {
+          const x = i % this.gw, y = (i - x) / this.gw; let m = i;
+          for (let qy = -1; qy <= 1; qy++) for (let qx = -1; qx <= 1; qx++) { const nx = x + qx, ny = y + qy; if (nx < 0 || ny < 0 || nx >= this.gw || ny >= this.gh) continue; const j = ny * this.gw + nx; if (campo[j] < campo[m]) m = j; }
+          const [cx, cy] = this.#centro(m), l = Math.hypot(cx - a.x, cy - a.y) || 1; dx = (cx - a.x) / l; dy = (cy - a.y) / l;
+        }
+      } else if (a.estado === 'parado') {
+        a.espera -= dt; a.tPar += dt;
         if (a.espera <= 0) { a.vistas.add(a.destino); a.faltan--; this.paradas[a.destino].visitas++; this.#elegir(a); }
       } else {
         const campo = a.destino >= 0 ? this.#campoParada(a.destino) : this.#campoSalida();
@@ -262,10 +294,10 @@ export class Simulacion {
         const trabado = this.t - a.tMejor > 25;
         // llega al destino; si el puesto está lleno, se queda mirando desde atrás
         if (d0 <= C * 1.2 || (a.destino >= 0 && d0 < 2.2 && a.dens >= 1.6) || (trabado && (a.destino < 0 || d0 < 4))) {
-          if (a.destino >= 0) { a.estado = 'parado'; a.espera = P.permanencia * (0.6 + this.rnd() * 0.8); }
-          else { this.fin.push(a.t); continue; }                     // salió
+          if (a.destino >= 0) { a.estado = 'parado'; a.espera = P.permanencia * (a.seguido ? 1 : 0.6 + this.rnd() * 0.8) * (a.destino === a.hijo ? 2 : 1); }
+          else { this.#salio(a); continue; }                     // salió
         } else if (!isFinite(d0) || trabado) {
-          if (a.destino >= 0) { if (trabado) { a.vistas.add(a.destino); a.faltan--; } this.#elegir(a); } else { this.fin.push(a.t); continue; }
+          if (a.destino >= 0) { if (trabado) { a.vistas.add(a.destino); a.faltan--; } this.#elegir(a); } else { this.#salio(a); continue; }
         } else {
           const x = i % this.gw, y = (i - x) / this.gw; let m = i;
           for (let qy = -1; qy <= 1; qy++) for (let qx = -1; qx <= 1; qx++) {
@@ -288,6 +320,7 @@ export class Simulacion {
         else if (this.#libre(a.x, a.y + uy)) a.y += uy;
         else break;
       }
+      if (a.seguido) { const u = a.rastro[a.rastro.length - 1], d = Math.hypot(a.x - u[0], a.y - u[1]); if (d > 0.3) { a.rastro.push([a.x, a.y]); a.camino += d; } }
       quedan.push(a);
     }
     if (quedan.length < this.agentes.length) this.tUltimo = this.t;
@@ -299,11 +332,15 @@ export class Simulacion {
   completar(maxSeg = 2 * 3600) { while (!this.terminada && !this.falta && this.t < maxSeg) this.paso(); return this.resumen(); }
 
   resumen() {
-    const f = this.fin, prom = f.length ? f.reduce((a, b) => a + b, 0) / f.length : 0;
+    const med = l => l.length ? l.reduce((a, b) => a + b, 0) / l.length : 0;
+    const f = this.fin, prom = med(f), sg = this.seguido;
     let peor = 0, pi = -1; this.aglom.forEach((v, i) => { if (v > peor) { peor = v; pi = i; } });
     return {
       t: this.t, adentro: this.agentes.length, terminaron: f.length, total: this.p.visitantes + this.manuales.length,
       tiempoProm: prom, densMax: this.densMax, pctAglom: this.tTotal ? 100 * this.tAglom / this.tTotal : 0,
+      esperaProm: med(this.esperas), paradoProm: med(this.tParados), tandas: this.nTandas, esperando: this.agentes.filter(a => a.estado === 'espera').length,
+      seguido: sg && { t: sg.t, fin: sg.fin, espera: sg.tEsp, parado: sg.tPar, camino: sg.camino, vistas: sg.vistas.size, estado: sg.estado,
+        en: sg.destino >= 0 ? this.paradas[sg.destino].nombre : null, hijo: sg.hijo >= 0 ? this.paradas[sg.hijo].nombre : null },
       paradas: this.paradas.length, terminada: this.terminada, maxAdentro: this.maxAdentro, apurados: this.apurados, tUltimo: this.tUltimo,
       critico: pi >= 0 && peor > 5 ? [this.x0 + (pi % this.hw + 0.5) * CH, this.y0 + (Math.floor(pi / this.hw) + 0.5) * CH] : null,
     };
@@ -347,8 +384,14 @@ export class Simulacion {
     const r = Math.max(0.2, 2.5 * px);
     for (const a of this.agentes) {
       ctx.beginPath(); ctx.arc(a.x, a.y, r, 0, 7);
-      ctx.fillStyle = a.dens >= AGLOM ? '#d62828' : a.estado === 'parado' ? '#f08c00' : a.estado === 'sale' ? '#6c757d' : '#1971c2';
+      ctx.fillStyle = a.estado === 'espera' ? '#7048a8' : a.dens >= AGLOM ? '#d62828' : a.estado === 'parado' ? '#f08c00' : a.estado === 'sale' ? '#6c757d' : '#1971c2';
       ctx.fill(); ctx.lineWidth = px; ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.stroke();
+    }
+    const sg = this.seguido;
+    if (sg && sg.rastro.length > 1) {          // la persona que se está siguiendo: su recorrido y un marcador grande
+      ctx.beginPath(); sg.rastro.forEach((q, n) => n ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]));
+      ctx.strokeStyle = '#0b7285'; ctx.lineWidth = Math.max(0.1, 2.5 * px); ctx.lineJoin = 'round'; ctx.stroke();
+      if (!sg.fin) { ctx.beginPath(); ctx.arc(sg.x, sg.y, Math.max(0.42, 7 * px), 0, 7); ctx.fillStyle = '#15aabf'; ctx.fill(); ctx.lineWidth = 2.5 * px; ctx.strokeStyle = '#fff'; ctx.stroke(); }
     }
     const cr = this.terminada && this.resumen().critico;
     if (cr) { ctx.beginPath(); ctx.arc(cr[0], cr[1], Math.max(1, 16 * px), 0, 7); ctx.strokeStyle = '#d62828'; ctx.lineWidth = 2.5 * px; ctx.setLineDash([5 * px, 4 * px]); ctx.stroke(); ctx.setLineDash([]); }

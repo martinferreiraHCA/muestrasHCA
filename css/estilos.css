@@ -162,3 +162,6 @@ details#detEdificios small { color: var(--suave); display: block; }
 .barra .flex1 { display: none; }
 .etapas { flex: 1 1 auto; }
 .etapas button { padding: 5px 7px; gap: 5px; font-size: 13px; }
+
+h3.sub { font-size: 12px; margin: 12px 0 4px; color: var(--texto); display: flex; align-items: center; gap: 6px; }
+h3.sub .punto { width: 11px; height: 11px; border-radius: 50%; background: #15aabf; border: 2px solid #fff; box-shadow: 0 0 0 1px #0b7285; }

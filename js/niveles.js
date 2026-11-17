@@ -117,30 +117,36 @@ export function aLocal(it, x, y) {
   const a = -it.rot * Math.PI / 180, c = Math.cos(a), s = Math.sin(a), dx = x - it.x, dy = y - it.y;
   return [dx * c - dy * s, dx * s + dy * c];
 }
-const SEP_EST = 0.46, FILA_EST = 0.4;           // separación entre estudiantes y entre filas (m)
-/** Cómo se agrupan `n` estudiantes en un ancho `w`: un bloque lo más compacto posible, no una fila. */
-export function grupoEstudiantes(w, n) {
-  const cols = Math.max(1, Math.min(Math.floor((w + 0.25) / SEP_EST), Math.ceil(Math.sqrt(n))));
-  const filas = Math.ceil(n / cols);
-  return { cols, filas, fondo: n > 0 ? 0.3 + FILA_EST * (filas - 1) + 0.25 : 0 };
-}
+const SEP_EST = 0.5, PEGADO = 0.27;            // separación entre estudiantes y distancia al borde de la mesa (m)
 /**
- * Posiciones (en metros) de los estudiantes de un puesto. Van todos juntos detrás de la mesa, en un
- * bloque compacto y centrado (filas intercaladas); en un stand, adentro, contra el fondo.
+ * Lugares (en coordenadas del mueble) de `n` estudiantes pegados a las caras de una mesa: primero la cara
+ * de atrás, después los dos laterales y, si no alcanzan, la cara del frente. En un stand van adentro,
+ * contra el panel del fondo y los laterales. `lado` dice en qué cara quedó cada uno.
  */
-export function posEstudiantes(it) {
-  const n = it.estudiantes | 0; if (n <= 0) return [];
-  const a = it.rot * Math.PI / 180, c = Math.cos(a), s = Math.sin(a), { cols, filas } = grupoEstudiantes(it.w, n);
-  const stand = it.modelo === 'stand';
-  // primera fila: pegada a la espalda de la mesa; en el stand, pegada al panel del fondo
-  const y0 = stand ? -it.d / 2 + 0.35 : -it.d / 2 - 0.3, dir = stand ? 1 : -1, r = [];
-  for (let i = 0; i < n; i++) {
-    const f = Math.floor(i / cols), enFila = Math.min(cols, n - f * cols), k = i % cols;
-    const corr = enFila === cols && f % 2 === 1 && filas > 1 && cols > 1 ? SEP_EST / 4 : 0;       // filas intercaladas
-    const lx = (k - (enFila - 1) / 2) * SEP_EST + corr * (f % 4 === 1 ? 1 : -1), ly = y0 + dir * f * FILA_EST;
-    r.push([it.x + lx * c - ly * s, it.y + lx * s + ly * c]);
+export function carasEstudiantes(w, d, n, stand = false) {
+  const r = [], fila = (cant, f) => { for (let k = 0; k < cant && r.length < n; k++) r.push(f((k - (cant - 1) / 2) * SEP_EST)); };
+  const capW = Math.max(1, Math.floor((stand ? w - 0.5 : w + 0.1) / SEP_EST)), capD = Math.max(1, Math.floor((stand ? d - 0.9 : d + 0.1) / SEP_EST));
+  const q = stand ? -0.33 : PEGADO;                 // el stand los tiene adentro; la mesa, afuera pegados al borde
+  for (let vuelta = 0; r.length < n && vuelta < 6; vuelta++) {
+    const e = q + (stand ? -1 : 1) * vuelta * SEP_EST, falta = () => n - r.length;
+    fila(Math.min(capW, falta()), x => [x, -d / 2 - e, 'atras']);
+    const lat = Math.min(2 * capD, falta()), izq = Math.ceil(lat / 2), der = lat - izq, cy = stand ? 0.1 : 0;
+    fila(izq, y => [-w / 2 - e, y + cy, 'lado']); fila(der, y => [w / 2 + e, y + cy, 'lado']);
+    if (!stand) fila(Math.min(capW, falta()), x => [x, d / 2 + e, 'frente']);
   }
   return r;
+}
+/** Lugar que hay que dejar libre alrededor de una mesa para sus estudiantes. */
+export function margenEstudiantes(w, d, n, stand = false) {
+  if (stand || n <= 0) return { atras: 0, lados: 0, frente: 0 };
+  const c = carasEstudiantes(w, d, n), m = k => Math.max(0, ...c.filter(p => p[2] === k).map(p => (k === 'lado' ? Math.abs(p[0]) - w / 2 : Math.abs(p[1]) - d / 2) + 0.24));
+  return { atras: m('atras'), lados: m('lado'), frente: m('frente') };
+}
+/** Posiciones (en metros del plano) de los estudiantes de un puesto. */
+export function posEstudiantes(it) {
+  const n = it.estudiantes | 0; if (n <= 0) return [];
+  const a = it.rot * Math.PI / 180, c = Math.cos(a), s = Math.sin(a);
+  return carasEstudiantes(it.w, it.d, n, it.modelo === 'stand').map(([lx, ly]) => [it.x + lx * c - ly * s, it.y + lx * s + ly * c]);
 }
 
 export const esRedondo = it => it.modelo === 'mesa-redonda' || it.modelo === 'cilindro' || it.modelo === 'persona';

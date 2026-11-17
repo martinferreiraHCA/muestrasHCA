@@ -53,6 +53,7 @@
       <div class="botones">
         <button id="btnEntrada" title="Tocá en el plano por dónde entra la gente">＋ Entrada <span id="nEntradas" class="chip"></span></button>
         <button id="btnSalida" title="Tocá en el plano por dónde sale la gente">＋ Salida <span id="nSalidas" class="chip"></span></button>
+        <button id="btnEspera" title="Tocá en el plano dónde esperan los padres cuando entran por tandas">＋ Lugar de espera</button>
       </div>
     </section>
 
@@ -72,6 +73,7 @@
       <div class="fila2">
         <label>Cada equipo usa<select id="eqTipo"></select></label>
         <label title="Para los renglones que no dicen cuántos son">Estudiantes por equipo<input id="eqPorDef" type="number" min="0" max="40" value="4"></label>
+        <label title="Los equipos con más estudiantes reciben varias mesas juntas. 0 = siempre una sola">Estudiantes por mesa<input id="eqPorMesa" type="number" min="0" max="40" value="4"></label>
       </div>
       <button id="btnDistribuir" class="primario ancho">Distribuir en los lugares elegidos</button>
       <p id="eqResultado" class="ayuda" style="margin-top:8px"></p>
@@ -129,13 +131,14 @@
     <div class="herramientas oculto" id="herramientasSim">
       <button id="btnSimPlay" class="activo" title="Iniciar o pausar la simulación">▶ Simular</button>
       <button id="btnSimReset" title="Volver a empezar">Reiniciar</button>
+      <button id="btnSimYa" title="Calcula toda la simulación de una vez, sin animación">⏩ Resultado al instante</button>
       <label>Velocidad
-        <select id="selSimVel"><option value="1">×1</option><option value="4" selected>×4</option><option value="16">×16</option><option value="60">×60</option></select>
+        <select id="selSimVel"><option value="1">×1</option><option value="4" selected>×4</option><option value="16">×16</option><option value="60">×60</option><option value="240">×240</option></select>
       </label>
       <label>Mapa
         <select id="selSimMapa"><option value="transito">Tránsito</option><option value="aglomeracion">Aglomeración</option><option value="ninguno">Sin mapa</option></select>
       </label>
-      <button id="btnSimComparar" title="Corre la simulación completa con recorrido libre y guiado y compara">Comparar recorridos</button>
+      <button id="btnSimComparar" title="Prueba todas las dinámicas (libre, guiado, hijo primero, por tandas) y las compara">Comparar dinámicas</button>
       <button id="btnEncuadrar2">Encuadrar</button>
     </div>
     <div class="herramientas oculto" id="herramientasSol">

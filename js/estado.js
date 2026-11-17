@@ -51,6 +51,7 @@ export const CATALOGO_BASE = [
     { id: 'entrada', nombre: 'Entrada', modelo: 'zona', w: 1.6, d: 1.0, h: 0, color: '#1a9c4b', etiqueta: 'Entrada' },
     { id: 'salida', nombre: 'Salida', modelo: 'zona', w: 1.6, d: 1.0, h: 0, color: '#c0392b', etiqueta: 'Salida' },
     { id: 'acceso', nombre: 'Acceso al colegio', modelo: 'zona', w: 1.6, d: 1.0, h: 0, color: '#7048a8', etiqueta: 'Acceso' },
+    { id: 'espera', nombre: 'Lugar de espera', modelo: 'zona', w: 4.0, d: 3.0, h: 0, color: '#7048a8', etiqueta: 'Espera' },
     { id: 'persona', nombre: 'Persona', modelo: 'persona', w: 0.5, d: 0.5, h: 1.7, color: '#f08c00' },
   ]),
 ];

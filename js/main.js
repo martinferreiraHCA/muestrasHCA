@@ -177,7 +177,7 @@ function pintarEquipos() {
   const tipos = E.catalogo().filter(t => TIPOS_EQ.includes(t.id) || !t.grupo);
   $('eqTipo').innerHTML = tipos.map(t => `<option value="${t.id}" ${t.id === (q.tipo || 'stand') ? 'selected' : ''}>${esc(t.nombre)} (${t.w} × ${t.d} m)</option>`).join('');
   if (document.activeElement !== $('eqTexto')) $('eqTexto').value = q.texto || '';
-  $('eqPorDef').value = q.porDef ?? 4;
+  $('eqPorDef').value = q.porDef ?? 4; $('eqPorMesa').value = q.porMesa ?? 4;
   contarEquipos();
 }
 function contarEquipos() {
@@ -185,7 +185,7 @@ function contarEquipos() {
   $('resEquipos').textContent = l.length ? `${l.length} · ${l.reduce((a, e) => a + e.estudiantes, 0)} estudiantes` : '';
   return l;
 }
-function guardarEquipos() { proyecto().equipos = { texto: $('eqTexto').value, tipo: $('eqTipo').value, porDef: num($('eqPorDef').value, 0, 40, 4) }; avisar('nombre'); pintarGuia(); }
+function guardarEquipos() { proyecto().equipos = { texto: $('eqTexto').value, tipo: $('eqTipo').value, porDef: num($('eqPorDef').value, 0, 40, 4), porMesa: num($('eqPorMesa').value, 0, 40, 4) }; avisar('nombre'); pintarGuia(); }
 async function distribuirEquipos() {
   guardarEquipos();
   const l = contarEquipos(), p = proyecto();
@@ -194,11 +194,11 @@ async function distribuirEquipos() {
   const previos = p.items.filter(i => i.equipo && i.nivel === nivel.id).length;
   if (previos && !await confirmar(`Ya hay ${previos} puestos de equipos ubicados. ¿Los reemplazo por una distribución nueva?`, 'Reemplazar')) return;
   aviso('Distribuyendo…'); await new Promise(f => setTimeout(f, 30));
-  const r = distribuir(nivel, p, l, E.catalogo().find(t => t.id === $('eqTipo').value));
+  const r = distribuir(nivel, p, l, E.catalogo().find(t => t.id === $('eqTipo').value), num($('eqPorMesa').value, 0, 40, 4));
   marcar();
   p.items = [...p.items.filter(i => !(i.equipo && i.nivel === nivel.id)), ...r.items];
   ui.seleccion.clear(); avisar('items'); P.encuadrar();
-  $('eqResultado').innerHTML = `<b>${r.items.length} de ${l.length} equipos ubicados.</b> ${esc(r.resumen)}` +
+  $('eqResultado').innerHTML = `<b>${r.items.length} de ${l.length} equipos ubicados${r.mesas > r.items.length ? `, con ${r.mesas} mesas` : ''}.</b> ${esc(r.resumen)}` +
     (r.sinLugar.length ? ` <span class="alerta">No entraron: ${esc(r.sinLugar.map(e => e.nombre).join(', '))}. Elegí más lugares o un mueble más chico.</span>` : '');
   aviso(`${r.items.length} equipos ubicados.`);
 }
@@ -322,10 +322,22 @@ function reloj(seg) {
 }
 function parSim() {
   const q = { ...SIM_DEF, ...(proyecto().sim || {}) };
-  // si no se indicó, la gente va llegando durante toda la muestra (menos el cuarto final)
-  if (!q.llegada) { const d = duracionMuestra(); q.llegada = d ? Math.max(1, Math.round(d * 0.75)) : Math.max(1, Math.round(q.visitantes / 20)); q.llegadaAuto = true; }
+  q.turnos = Math.max(1, q.turnos | 0);
+  q.durTurno = duracionMuestra() / q.turnos;                 // minutos de cada turno (0 si no hay horario)
+  // si no se indicó, los padres van llegando durante los primeros tres cuartos del turno
+  if (!q.llegada) { q.llegada = q.durTurno ? Math.max(1, Math.round(q.durTurno * 0.75)) : Math.max(1, Math.round(q.visitantes / 20)); q.llegadaAuto = true; }
   q.porMinuto = q.visitantes / q.llegada;
   return q;
+}
+/** Cuánto tarda una persona sola (sin nadie más) en recorrer toda la muestra, con los mismos tiempos por stand. */
+let soloCache = null;
+function tiempoSolo() {
+  const q = parSim(), clave = JSON.stringify([nivel.id, q.permanencia, q.paradas, q.modo, q.hijoPrimero, q.velocidad, proyecto().items.length, proyecto().items.map(i => [i.x, i.y, i.rot]).join()]);
+  if (soloCache?.clave !== clave) {
+    const s1 = new Simulacion(nivel, proyecto(), { ...q, visitantes: 1, porMinuto: 60, tandas: false, seguir: 0 }), r = s1.falta ? null : s1.completar(4 * 3600);
+    soloCache = { clave, r: r && r.seguido };
+  }
+  return soloCache.r;
 }
 function simCrear() {
   simPausar(); sim = nivel ? new Simulacion(nivel, proyecto(), parSim()) : null; simComp = null;
@@ -339,7 +351,7 @@ function simAlternar() {
   simCorre = true; simPrevio = performance.now(); $('btnSimPlay').textContent = '⏸ Pausa';
   const cuadro = ahora => {
     if (!simCorre) return;
-    const vel = +$('selSimVel').value, pasos = Math.min(400, Math.max(1, Math.round(Math.min(0.1, (ahora - simPrevio) / 1000) * vel / DT)));
+    const vel = +$('selSimVel').value, pasos = Math.min(1600, Math.max(1, Math.round(Math.min(0.1, (ahora - simPrevio) / 1000) * vel / DT)));
     simPrevio = ahora;
     for (let i = 0; i < pasos && !sim.terminada; i++) sim.paso();
     P.pedir();
@@ -354,83 +366,122 @@ const nivelDens = d => d < 1 ? 'cómoda' : d < 2 ? 'aceptable' : d < 3.5 ? 'apre
 function pintarEstadoSim() {
   const el = $('simEstado'); if (!el || !sim) return;
   if (sim.falta) { el.innerHTML = `<p class="ayuda alerta">${esc(sim.falta)}</p>`; return; }
-  const r = sim.resumen(), dur = duracionMuestra(), hay = !!proyecto().horaInicio;
+  const r = sim.resumen(), q = parSim(), dur = q.durTurno, hay = !!proyecto().horaInicio, sg = r.seguido, coma = v => v.toFixed(1).replace('.', ',');
   const tarde = dur && r.terminada ? r.tUltimo / 60 - dur : 0;
   el.innerHTML = `<table class="resumen">
     <tr><td>${hay ? 'Hora simulada' : 'Tiempo simulado'}</td><td>${reloj(r.t)}</td></tr>
-    <tr><td>Personas adentro</td><td>${r.adentro}</td></tr>
+    <tr><td>Recorriendo ahora</td><td>${r.adentro - r.esperando}</td></tr>
+    ${q.tandas ? `<tr><td>Esperando su tanda</td><td>${r.esperando} <small>(${r.tandas} tanda${r.tandas === 1 ? '' : 's'} adentro)</small></td></tr>` : ''}
     <tr><td>Máximo a la vez</td><td>${r.maxAdentro}</td></tr>
     <tr><td>Ya salieron</td><td>${r.terminaron} de ${r.total}</td></tr>
-    <tr><td>Recorrido por persona</td><td>${r.terminaron ? mmss(r.tiempoProm) + ' min' : '—'}</td></tr>
-    <tr><td>Densidad máxima</td><td>${r.densMax.toFixed(1).replace('.', ',')} pers./m² <small>(${nivelDens(r.densMax)})</small></td></tr>
-    <tr><td>Tiempo en aglomeración</td><td>${r.pctAglom.toFixed(1).replace('.', ',')} %</td></tr>
+    <tr><td>Densidad máxima</td><td>${coma(r.densMax)} pers./m² <small>(${nivelDens(r.densMax)})</small></td></tr>
+    <tr><td>Tiempo en aglomeración</td><td>${coma(r.pctAglom)} %</td></tr>
     ${r.terminada ? `<tr><td>Sale la última persona</td><td>${hay ? reloj(r.tUltimo) : mmss(r.tUltimo)}</td></tr>` : ''}
   </table>
+  <h3 class="sub">Una persona promedio</h3>
+  ${r.terminaron ? `<table class="resumen">
+    <tr><td><b>Tarda en total</b></td><td><b>${mmss(r.tiempoProm)} min</b></td></tr>
+    <tr><td>· en los stands</td><td>${mmss(r.paradoProm)}</td></tr>
+    <tr><td>· caminando y haciendo lugar</td><td>${mmss(Math.max(0, r.tiempoProm - r.paradoProm - r.esperaProm))}</td></tr>
+    ${q.tandas ? `<tr><td>· esperando su tanda</td><td>${mmss(r.esperaProm)}</td></tr>` : ''}
+    <tr><td>Si estuviera sola</td><td>${tiempoSolo() ? mmss(tiempoSolo().t) + ' min' : '—'}</td></tr>
+  </table>` : '<p class="ayuda">Todavía no salió nadie.</p>'}
+  ${sg ? `<h3 class="sub">La persona que seguís <span class="punto"></span></h3><table class="resumen">
+    <tr><td>${sg.fin ? 'Terminó el recorrido en' : 'Lleva'}</td><td><b>${mmss(sg.t)} min</b></td></tr>
+    <tr><td>Stands visitados</td><td>${sg.vistas} de ${r.paradas}</td></tr>
+    <tr><td>Caminó</td><td>${Math.round(sg.camino)} m</td></tr>
+    <tr><td>${sg.fin ? 'Estuvo en los stands' : 'Ahora'}</td><td>${sg.fin ? mmss(sg.parado) : sg.estado === 'espera' ? 'espera su tanda' : sg.estado === 'sale' ? 'va a la salida' : (sg.estado === 'parado' ? 'está en ' : 'va a ') + esc(sg.en || '')}</td></tr>
+    ${sg.hijo ? `<tr><td>El stand de su hijo</td><td>${esc(sg.hijo)}</td></tr>` : ''}
+  </table>` : ''}
   ${r.terminada && dur ? (tarde > 1
-    ? `<p class="ayuda alerta">No alcanza el horario: la última persona sale ${Math.round(tarde)} min después del cierre. Probá con menos visitantes, menos tiempo por parada o más duración.</p>`
-    : `<p class="ayuda">El horario alcanza: todos terminan ${Math.round(-tarde)} min antes del cierre.</p>`) : ''}
-  ${r.apurados ? `<p class="ayuda alerta">${r.apurados} persona${r.apurados > 1 ? 's no llegaron' : ' no llegó'} a ver todas las paradas en el tiempo de visita.</p>` : ''}
+    ? `<p class="ayuda alerta">No alcanza el turno de ${Math.round(dur)} min: la última persona sale ${Math.round(tarde)} min después. Probá con menos padres por turno, menos tiempo por stand o más turnos.</p>`
+    : `<p class="ayuda">El turno de ${Math.round(dur)} min alcanza: todos terminan ${Math.round(-tarde)} min antes.</p>`) : ''}
+  ${r.apurados ? `<p class="ayuda alerta">${r.apurados} persona${r.apurados > 1 ? 's no llegaron' : ' no llegó'} a ver todos los stands en el tiempo de visita.</p>` : ''}
   ${r.terminada && r.critico && r.pctAglom > 2 ? '<p class="ayuda">El círculo rojo punteado marca el punto más congestionado: conviene ensanchar ese paso o separar los puestos cercanos.</p>' : ''}
-  ${sim.paradas.length ? `<p class="ayuda" style="margin-top:8px">Visitas por parada: ${sim.paradas.map(p => `${esc(p.nombre)} <b>${p.visitas}</b>`).join(' · ')}</p>` : ''}`;
+  ${sim.paradas.length ? `<p class="ayuda" style="margin-top:8px">Visitas por stand: ${sim.paradas.map(p => `${esc(p.nombre)} <b>${p.visitas}</b>`).join(' · ')}</p>` : ''}`;
 }
+const DINAMICAS = [
+  { id: 'libre', nombre: 'Libre', cambios: { modo: 'libre', hijoPrimero: false, tandas: false } },
+  { id: 'guiado', nombre: 'Guiado', cambios: { modo: 'guiado', hijoPrimero: false, tandas: false } },
+  { id: 'hijo', nombre: 'Hijo primero', cambios: { modo: 'libre', hijoPrimero: true, tandas: false } },
+  { id: 'tandas', nombre: 'Por tandas', cambios: { modo: 'libre', hijoPrimero: false, tandas: true } },
+  { id: 'tandas-hijo', nombre: 'Tandas + hijo', cambios: { modo: 'libre', hijoPrimero: true, tandas: true } },
+];
 function pintarPanelSim() {
   const p = parSim(), el = $('panelDer'), its = P.itemsNivel();
-  const nE = its.filter(esEntrada).length, nS = its.filter(esSalida).length, nP = its.filter(esParada).length, nG = its.filter(i => i.modelo === 'persona').length;
+  const nE = its.filter(esEntrada).length, nS = its.filter(esSalida).length, nP = its.filter(esParada).length, nW = its.filter(i => i.tipo === 'espera').length;
+  const tot = p.visitantes * p.turnos, hi = proyecto().horaInicio;
   el.innerHTML = `
-    <section><h2>Circulación de gente</h2>
-      <p class="ayuda">Los visitantes entran por las <b>Entradas</b>, recorren las paradas (stands y mesas con nombre) y se van por la <b>Salida</b>. También podés poner <b>Personas</b> sueltas en el plano.</p>
+    <section><h2>Visita de los padres</h2>
       <table class="resumen">
         <tr><td>Entradas</td><td>${nE || '<b class="alerta">falta</b>'}</td></tr>
         <tr><td>Salidas</td><td>${nS || 'por la entrada'}</td></tr>
-        <tr><td>Paradas del recorrido</td><td>${nP}</td></tr>
-        <tr><td>Personas puestas a mano</td><td>${nG}</td></tr>
+        <tr><td>Stands a visitar</td><td>${nP}</td></tr>
+        <tr><td>Lugar de espera</td><td>${nW || (p.tandas ? 'en la entrada' : '—')}</td></tr>
       </table>
     </section>
-    <section><h2>Parámetros</h2>
+    <section><h2>Turnos</h2>
       <div class="fila2">
-        <label>Visitantes<input id="sVis" type="number" min="1" max="600" value="${p.visitantes}"></label>
-        <label title="Minutos durante los que va entrando la gente">Llegan durante (min)<input id="sLle" type="number" min="1" max="1440" value="${p.llegada}"></label>
-        <label>Segundos por parada<input id="sPer" type="number" min="0" max="900" value="${p.permanencia}"></label>
-        <label title="0 = visitan todas">Paradas por persona<input id="sPar" type="number" min="0" max="99" value="${p.paradas}"></label>
-        <label title="Tope de tiempo por persona; 0 = sin tope">Tiempo de visita (min)<input id="sTie" type="number" min="0" max="600" value="${p.tiempoVisita}"></label>
+        <label>Padres por turno<input id="sVis" type="number" min="1" max="600" value="${p.visitantes}"></label>
+        <label>Cantidad de turnos<input id="sTur" type="number" min="1" max="20" value="${p.turnos}"></label>
+        <label title="Minutos durante los que van llegando los padres de un turno">Llegan durante (min)<input id="sLle" type="number" min="1" max="1440" value="${p.llegada}"></label>
         <label>Entran por minuto<input type="text" disabled value="${(Math.round(p.porMinuto * 10) / 10).toString().replace('.', ',')}"></label>
       </div>
+      <p class="ayuda">${p.durTurno ? `${p.turnos} turno${p.turnos > 1 ? 's' : ''} de ${Math.round(p.durTurno)} min${hi ? ` (${Array.from({ length: Math.min(p.turnos, 6) }, (_, k) => reloj(k * p.durTurno * 60)).join(', ')}${p.turnos > 6 ? '…' : ''})` : ''} · ${tot} padres en total.` : 'Cargá el horario de la muestra (paso 1) para saber cuánto dura cada turno.'} La simulación muestra un turno.</p>
+    </section>
+    <section><h2>Tiempos</h2>
+      <div class="fila2">
+        <label title="Cuánto se queda una persona en cada stand">Segundos por stand<input id="sPer" type="number" min="0" max="900" value="${p.permanencia}"></label>
+        <label title="0 = visitan todos">Stands por persona<input id="sPar" type="number" min="0" max="99" value="${p.paradas}"></label>
+        <label title="Tope de tiempo por persona; 0 = sin tope">Tope de visita (min)<input id="sTie" type="number" min="0" max="600" value="${p.tiempoVisita}"></label>
+        <label title="Qué visitante seguir con el marcador celeste (0 = el primero)">Seguir a la persona n.º<input id="sSeg" type="number" min="0" max="599" value="${p.seguir >= 0 ? p.seguir : Math.floor(p.visitantes / 2)}"></label>
+      </div>
+    </section>
+    <section><h2>Dinámica</h2>
       <label>Recorrido<select id="sModo">
-        <option value="libre" ${p.modo === 'libre' ? 'selected' : ''}>Libre: cada uno va al puesto más cercano y menos lleno</option>
+        <option value="libre" ${p.modo === 'libre' ? 'selected' : ''}>Libre: va al stand más cercano y menos lleno</option>
         <option value="guiado" ${p.modo === 'guiado' ? 'selected' : ''}>Guiado: sentido único, todos en el mismo orden</option>
       </select></label>
-      <p class="ayuda">${duracionMuestra() ? `La muestra dura ${duracionMuestra()} min (${esc(proyecto().horaInicio)} a ${esc(proyecto().horaFin)}).` : 'Cargá el horario de la muestra (a la izquierda) para saber si el tiempo alcanza.'} En «Paradas por persona» y «Tiempo de visita», 0 significa sin límite.</p>
+      <label class="check"><input id="sHijo" type="checkbox" ${p.hijoPrimero ? 'checked' : ''}> Primero el stand de su hijo (y se quedan el doble), después el resto</label>
+      <label class="check"><input id="sTan" type="checkbox" ${p.tandas ? 'checked' : ''}> Entran por tandas y esperan en un lugar</label>
+      <div class="fila2 ${p.tandas ? '' : 'oculto'}">
+        <label>Padres por tanda<input id="sTam" type="number" min="1" max="300" value="${p.tandaTam}"></label>
+        <label>Una tanda cada (min)<input id="sCad" type="number" min="1" max="120" value="${p.tandaCada}"></label>
+      </div>
+      ${p.tandas && !nW ? '<p class="ayuda">Marcá el <b>Lugar de espera</b> (columna izquierda); si no, esperan en la entrada.</p>' : ''}
     </section>
     <section><h2>Resultado</h2><div id="simEstado"></div></section>
-    ${simComp ? `<section><h2>Comparación</h2>
-      <table class="resumen comp"><tr><td></td><td>Libre</td><td>Guiado</td></tr>
-        <tr><td>Duración total</td><td>${mmss(simComp.libre.t)}</td><td>${mmss(simComp.guiado.t)}</td></tr>
-        <tr><td>Visita media</td><td>${mmss(simComp.libre.tiempoProm)}</td><td>${mmss(simComp.guiado.tiempoProm)}</td></tr>
-        <tr><td>Densidad máx.</td><td>${simComp.libre.densMax.toFixed(1)}</td><td>${simComp.guiado.densMax.toFixed(1)}</td></tr>
-        <tr><td>En aglomeración</td><td>${simComp.libre.pctAglom.toFixed(1)} %</td><td>${simComp.guiado.pctAglom.toFixed(1)} %</td></tr>
+    ${simComp ? `<section><h2>Comparación de dinámicas</h2>
+      <table class="tablasol"><tr><th>Dinámica</th><th title="Tiempo promedio por persona">Por persona</th><th title="Sale la última persona">Termina</th><th title="Densidad máxima (pers./m²)">Dens.</th><th title="% del tiempo en aglomeración">Aglom.</th></tr>
+        ${simComp.filas.map(f => `<tr class="${f.id === simComp.mejor ? 'muestra' : ''}"><td>${f.nombre}</td><td>${mmss(f.r.tiempoProm)}</td><td>${mmss(f.r.tUltimo)}</td><td>${f.r.densMax.toFixed(1)}</td><td>${f.r.pctAglom.toFixed(1)} %</td></tr>`).join('')}
       </table><p class="ayuda" style="margin-top:8px">${esc(simComp.texto)}</p></section>` : ''}`;
-  const campo = (id, k, min, max) => { $(id).onchange = e => { proyecto().sim = { ...(proyecto().sim || {}), [k]: k === 'modo' ? e.target.value : num(e.target.value, min, max, SIM_DEF[k]) }; avisar('sim'); }; };
-  campo('sVis', 'visitantes', 1, 600); campo('sLle', 'llegada', 1, 1440); campo('sTie', 'tiempoVisita', 0, 600); campo('sPer', 'permanencia', 0, 900); campo('sPar', 'paradas', 0, 99); campo('sModo', 'modo');
+  const poner = (id, k, min, max) => { $(id).onchange = e => { const t = e.target; proyecto().sim = { ...(proyecto().sim || {}), [k]: t.type === 'checkbox' ? t.checked : t.tagName === 'SELECT' ? t.value : num(t.value, min, max, SIM_DEF[k]) }; avisar('sim'); }; };
+  poner('sVis', 'visitantes', 1, 600); poner('sTur', 'turnos', 1, 20); poner('sLle', 'llegada', 1, 1440); poner('sTie', 'tiempoVisita', 0, 600); poner('sPer', 'permanencia', 0, 900);
+  poner('sPar', 'paradas', 0, 99); poner('sSeg', 'seguir', 0, 599); poner('sModo', 'modo'); poner('sHijo', 'hijoPrimero'); poner('sTan', 'tandas'); poner('sTam', 'tandaTam', 1, 300); poner('sCad', 'tandaCada', 1, 120);
   pintarEstadoSim();
+}
+/** Calcula toda la simulación de una vez, sin animarla. */
+async function simYa() {
+  simPausar(); simCrear();
+  if (sim.falta) return aviso(sim.falta);
+  aviso('Calculando…'); await new Promise(f => setTimeout(f, 30));
+  const t0 = performance.now(); sim.completar(4 * 3600);
+  pintarEstadoSim(); P.pedir(); aviso(`Listo en ${((performance.now() - t0) / 1000).toFixed(1).replace('.', ',')} s.`);
 }
 async function simComparar() {
   simPausar();
   const base = new Simulacion(nivel, proyecto(), parSim());
   if (base.falta) return aviso(base.falta);
-  if (base.paradas.length < 2) return aviso('Hacen falta al menos dos paradas (stands o mesas con nombre) para comparar recorridos.');
-  aviso('Calculando las dos alternativas…'); await new Promise(f => setTimeout(f, 40));
-  const libre = new Simulacion(nivel, proyecto(), { ...parSim(), modo: 'libre' }).completar();
-  const g = new Simulacion(nivel, proyecto(), { ...parSim(), modo: 'guiado' }); const guiado = g.completar();
-  const nota = r => r.pctAglom + r.densMax * 2;
-  const parejo = Math.abs(libre.pctAglom - guiado.pctAglom) < 2 && Math.abs(libre.densMax - guiado.densMax) < 0.5;
-  const mejor = parejo ? parSim().modo : nota(libre) <= nota(guiado) ? 'libre' : 'guiado';
-  const m = mejor === 'libre' ? libre : guiado, otro = mejor === 'libre' ? guiado : libre;
-  simComp = { libre, guiado, mejor, texto: parejo
-    ? 'Las dos formas de recorrer dan una circulación parecida con esta distribución. Para mejorarla, probá separar más los puestos o mover la entrada y la salida.'
-    : `Con esta distribución circula mejor el recorrido ${mejor}: ${m.pctAglom.toFixed(1)} % del tiempo en aglomeración contra ${otro.pctAglom.toFixed(1)} %. Se dejó elegido ese recorrido.` };
-  proyecto().sim = { ...(proyecto().sim || {}), modo: mejor };
+  if (base.paradas.length < 2) return aviso('Hacen falta al menos dos stands o mesas con nombre para comparar dinámicas.');
+  aviso('Probando las dinámicas…'); await new Promise(f => setTimeout(f, 40));
+  const filas = DINAMICAS.map(d => ({ ...d, r: new Simulacion(nivel, proyecto(), { ...parSim(), ...d.cambios }).completar(4 * 3600) }));
+  // menos aglomeración y densidad primero; a igualdad, lo que termina antes
+  const nota = r => r.pctAglom + r.densMax * 2 + r.tUltimo / 600;
+  const m = filas.reduce((a, b) => nota(b.r) < nota(a.r) ? b : a);
+  simComp = { filas, mejor: m.id, texto: `La que mejor circula es «${m.nombre}» (resaltada): ${m.r.pctAglom.toFixed(1)} % del tiempo en aglomeración, densidad máxima ${m.r.densMax.toFixed(1)} y termina a los ${mmss(m.r.tUltimo)} min. La dejé elegida; podés cambiarla arriba.` };
+  proyecto().sim = { ...(proyecto().sim || {}), ...m.cambios };
   const comp = simComp; avisar('sim'); simComp = comp;
-  sim = new Simulacion(nivel, proyecto(), parSim()); sim.completar();
+  sim = new Simulacion(nivel, proyecto(), parSim()); sim.completar(4 * 3600);
   pintarPanel(); P.pedir();
 }
 
@@ -668,7 +719,7 @@ async function exportarPDF() {
       const mapa = $('selSimMapa').value === 'ninguno' ? 'transito' : $('selSimMapa').value;
       const img = fotoPlano((ctx, k) => sim.dibujar(ctx, k, mapa)), s = sim.resumen(), q = parSim();
       if (img) paginas.push({ ...img, titulo: `${nivel.nombre}  ·  Circulación de gente (simulación)`, lineas: [
-        `${s.total} visitantes que llegan durante ${q.llegada} min · ${q.permanencia} s por parada${q.tiempoVisita ? ` · hasta ${q.tiempoVisita} min por persona` : ''} · recorrido ${q.modo} · máximo ${s.maxAdentro} personas a la vez`,
+        `${s.total} visitantes que llegan durante ${q.llegada} min · ${q.permanencia} s por parada${q.tiempoVisita ? ` · hasta ${q.tiempoVisita} min por persona` : ''} · recorrido ${q.modo}${q.hijoPrimero ? ' · primero el stand del hijo' : ''}${q.tandas ? ` · tandas de ${q.tandaTam} cada ${q.tandaCada} min` : ''} · máximo ${s.maxAdentro} personas a la vez`,
         `${p.horaInicio ? `Sale la última persona ${reloj(s.tUltimo)}` : `Duración ${mmss(s.tUltimo)}`} · recorrido por persona ${s.terminaron ? mmss(s.tiempoProm) + ' min' : '—'} · densidad máxima ${s.densMax.toFixed(1).replace('.', ',')} pers./m² (${nivelDens(s.densMax)}) · ${s.pctAglom.toFixed(1).replace('.', ',')} % del tiempo en aglomeración`],
         pie: 'Colores: zonas más transitadas o con aglomeración. Línea punteada y números: recorrido guiado sugerido. Círculo rojo: punto más congestionado.' });
     }
@@ -733,7 +784,7 @@ function conectar() {
   $('btnSolPlay').onclick = solAlternar; $('btnEncuadrar3').onclick = P.encuadrar;
   $('btnSolMuestra').onclick = () => { const h = horaDec(proyecto().horaInicio); if (h === null) return aviso('Cargá primero la hora de inicio de la muestra.'); $('solHora').value = h; solPoner({ hora: h, fecha: proyecto().fecha || solFecha() }); $('solFecha').value = solFecha(); solTexto(); };
   $('btnSimPlay').onclick = simAlternar; $('btnSimReset').onclick = () => { simCrear(); };
-  $('selSimMapa').onchange = () => P.pedir(); $('btnSimComparar').onclick = simComparar; $('btnEncuadrar2').onclick = P.encuadrar;
+  $('selSimMapa').onchange = () => P.pedir(); $('btnSimComparar').onclick = simComparar; $('btnSimYa').onclick = simYa; $('btnEncuadrar2').onclick = P.encuadrar;
   $('btnDeshacer').onclick = () => E.deshacer(); $('btnRehacer').onclick = () => E.rehacer();
   $('btnPDF').onclick = exportarPDF;
   $('inNombre').oninput = e => { proyecto().nombre = e.target.value; avisar('nombre'); };
@@ -741,7 +792,7 @@ function conectar() {
   $('inInicio').onchange = e => { proyecto().horaInicio = e.target.value; avisar('sim'); };
   $('inFin').onchange = e => { proyecto().horaFin = e.target.value; avisar('sim'); };
   const marcarPaso = async h => { if (vistaIso) await ver('plano'); ui.alHerramienta(h); };
-  $('btnEntrada').onclick = () => marcarPaso('entrada'); $('btnSalida').onclick = () => marcarPaso('salida');
+  $('btnEntrada').onclick = () => marcarPaso('entrada'); $('btnSalida').onclick = () => marcarPaso('salida'); $('btnEspera').onclick = () => marcarPaso('espera');
   $('inAltura').onchange = e => { marcar(); proyecto().altura = num(e.target.value, 1, 8, 3); avisar('altura'); };
   $('inBuscarEsp').oninput = pintarEspacios;
   const clicEtapa = e => { const b = e.target.closest('[data-n]'); if (b && !b.disabled) irEtapa(+b.dataset.n); };
@@ -753,7 +804,7 @@ function conectar() {
     enfocarLugar(); pintarGuia();
   };
   $('chkTodoPanel').onchange = () => irEtapa(etapa(), false);
-  $('eqTexto').oninput = () => { contarEquipos(); }; $('eqTexto').onchange = $('eqTipo').onchange = $('eqPorDef').onchange = guardarEquipos;
+  $('eqTexto').oninput = () => { contarEquipos(); }; $('eqTexto').onchange = $('eqTipo').onchange = $('eqPorDef').onchange = $('eqPorMesa').onchange = guardarEquipos;
   $('btnDistribuir').onclick = distribuirEquipos;
   $('btnPDF2').onclick = () => exportarPDF();
   $('btn3D').onclick = () => ver('iso'); $('btnVolverPlanta').onclick = () => ver('plano');

@@ -11,9 +11,10 @@ las ubicaciones.
   vista a los lugares elegidos.
 - **Equipos en texto plano**: se escribe un equipo por renglón (`nombre ; estudiantes ; lugar`)
   y el sistema ubica un puesto por equipo contra las paredes de los lugares elegidos, separados
-  parejo y con el centro libre. Si hay una Entrada marcada y también entran en islas, compara
-  las dos opciones con el simulador y deja la que circula mejor. Cada puesto muestra sus
-  estudiantes, que además ocupan lugar en la simulación.
+  lo más posible y con el centro libre (en islas solo si no queda pared). Cada puesto reserva
+  el lugar de sus estudiantes, que van pegados a las caras de la mesa (atrás, laterales y
+  frente); los equipos grandes reciben varias mesas juntas. Los estudiantes ocupan lugar en
+  la simulación.
 - **Niveles y espacios**: subsuelo, planta baja, primer y segundo piso, tomados del plano
   `PLANO_MDCI.dwg`. Los salones se detectan del plano y los exteriores de planta baja (patio
   central, patio este, cancha, explanada) vienen trazados.
@@ -38,6 +39,11 @@ las ubicaciones.
   recorren las paradas (stands y mesas con nombre) y se ve en vivo por dónde pasan, dónde se
   aglomeran y cuánto tardan. Compara el recorrido libre con uno guiado de sentido único y
   dibuja el orden sugerido. También se pueden poner personas a mano.
+- **Visita de los padres**: padres esperados por turno y cantidad de turnos; tiempo por stand;
+  dinámicas a elegir (libre, guiada, primero el stand del hijo, por tandas con lugar de espera)
+  y comparación automática entre todas. «Resultado al instante» calcula la simulación sin
+  animarla. Informa cuánto tarda una persona promedio (en los stands, caminando, esperando) y
+  cuánto tardaría sola, y permite seguir a una persona entre todas con su recorrido dibujado.
 - **Entrada, salida y horario**: en la muestra se cargan la hora de inicio y de fin y se marcan
   la entrada y la salida con un clic en el plano. La simulación reparte la llegada de los
   visitantes en ese horario, admite un tope de tiempo de visita por persona, e informa el
