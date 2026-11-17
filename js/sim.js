@@ -12,7 +12,8 @@ const AGLOM = 2;          // personas/m² a partir de las cuales se considera ag
 // hijoPrimero: cada visitante va primero al puesto de su hijo. tandas: entran en grupos de `tandaTam` cada
 // `tandaCada` minutos y mientras tanto esperan en el «Lugar de espera» (o en la entrada). seguir: n.º del
 // visitante al que se le dibuja el recorrido (-1 = el del medio).
-export const SIM_DEF = { visitantes: 80, porMinuto: 20, llegada: 0, tiempoVisita: 0, permanencia: 45, paradas: 0, modo: 'libre', velocidad: 1.2,
+export const SIM_DEF = { visitantes: 80, porMinuto: 20, llegada: 0, tiempoVisita: 0, permanencia: 45, paradas: 0, modo: 'libre', velocidad: 1.3,       // m/s: paso promedio de un adulto caminando tranquilo
+ 
   turnos: 1, hijoPrimero: false, tandas: false, tandaTam: 20, tandaCada: 5, seguir: -1 };
 const FIJOS = ['mesa', 'mesa-redonda', 'caja', 'cilindro', 'panel', 'banco', 'zona'];
 export const esEntrada = it => it.tipo === 'entrada';
@@ -85,7 +86,11 @@ export class Simulacion {
     for (const it of items.filter(esParada)) {
       const f = it.modelo === 'zona' ? fuentes(it, 0)
         : it.modelo === 'stand' ? fuentes(it, 0.9, (lx, ly) => Math.abs(lx) < it.w / 2 - 0.15 && ly > -it.d / 2 + 0.25)
-        : fuentes(it, 0.75).filter(i => !cruzaMuro(this.#centro(i), [it.x, it.y]));       // no desde el otro lado de una pared
+        : (() => {      // los visitantes se paran frente a la mesa (el lado opuesto a los estudiantes), no a los costados ni atrás
+          const visible = i => !cruzaMuro(this.#centro(i), [it.x, it.y]);
+          const frente = fuentes(it, 1.3, (lx, ly) => ly > it.d / 2 + 0.1 && Math.abs(lx) <= it.w / 2 + 0.3).filter(visible);
+          return frente.length ? frente : fuentes(it, 0.75).filter(visible);          // si el frente está tapado, alrededor
+        })();
       if (f.length) this.paradas.push({ it, nombre: it.etiqueta || it.nombre, fuentes: f, ocup: 0, visitas: 0 });
     }
     this.falta = !this.entradas.length ? 'Falta marcar al menos una Entrada (está en la lista de elementos).'
@@ -240,9 +245,10 @@ export class Simulacion {
   }
   #salio(a) { this.fin.push(a.t); this.esperas.push(a.tEsp); this.tParados.push(a.tPar); if (a.seguido) a.fin = this.t; }
 
-  paso() {
+  /** Avanza la simulación `dt` segundos (por defecto un paso normal). */
+  paso(dt = DT) {
     if (this.falta || this.terminada) return;
-    const P = this.p, dt = DT; this.t += dt;
+    const P = this.p; this.t += dt;
     // llegadas por las entradas
     const deben = Math.min(P.visitantes, Math.floor(this.t * P.porMinuto / 60) + 1);
     while (this.creados < deben) {

@@ -40,6 +40,7 @@ const A = {
   'segundos por stand': ['Cuánto se queda una persona mirando cada stand.', 'Con 60 segundos y 7 stands, solo en los stands se van 7 minutos, sin contar caminar.'],
   'stands por persona': ['Cuántos stands visita cada persona. 0 significa todos.', 'Con 3, cada padre mira tres stands y se va.'],
   'tope de visita': ['Tiempo máximo que una persona se queda. Al llegar, deja lo que le falta y sale. 0 es sin tope.', 'Con 10, a los diez minutos va a la salida aunque no haya visto todo.'],
+  'velocidad al caminar': ['A qué velocidad camina una persona cuando tiene el paso libre. Cuando hay mucha gente, la simulación la frena sola.', '1,3 m/s es el paso normal de un adulto (unos 4,7 km/h). Con chicos o personas mayores, 1,0.'],
   'seguir a la persona': ['Qué visitante se muestra con el marcador celeste y su recorrido dibujado.', '0 es el primero que entra; 30 es el número 31.'],
   'recorrido': ['Cómo decide cada persona a qué stand ir.', 'Libre: va al más cercano y menos lleno. Guiado: todos siguen el mismo orden, en sentido único.'],
   'primero el stand': ['Cada padre va primero al stand de su hijo, se queda el doble, y después recorre el resto.', 'Los equipos con más estudiantes reciben más padres al principio.'],

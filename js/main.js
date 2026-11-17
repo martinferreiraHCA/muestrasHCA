@@ -379,9 +379,11 @@ function simAlternar() {
   simCorre = true; simPrevio = performance.now(); $('btnSimPlay').textContent = '⏸ Pausa';
   const cuadro = ahora => {
     if (!simCorre) return;
-    const vel = +$('selSimVel').value, pasos = Math.min(1600, Math.max(1, Math.round(Math.min(0.1, (ahora - simPrevio) / 1000) * vel / DT)));
+    // segundos de simulación que corresponden a este cuadro: en tiempo real la gente camina a su velocidad verdadera
+    const seg = Math.min(0.1, (ahora - simPrevio) / 1000) * +$('selSimVel').value;
     simPrevio = ahora;
-    for (let i = 0; i < pasos && !sim.terminada; i++) sim.paso();
+    if (seg <= DT) sim.paso(Math.max(0.004, seg));
+    else for (let i = 0, n = Math.min(1600, Math.round(seg / DT)); i < n && !sim.terminada; i++) sim.paso();
     P.pedir();
     if (ahora - tPanelSim > 400) { tPanelSim = ahora; pintarEstadoSim(); }
     if (sim.terminada) { simPausar(); pintarEstadoSim(); finSim(); aviso('Simulación terminada.'); return; }
@@ -464,6 +466,7 @@ function pintarPanelSim() {
         <label title="Cuánto se queda una persona en cada stand">Segundos por stand<input id="sPer" type="number" min="0" max="900" value="${p.permanencia}"></label>
         <label title="0 = visitan todos">Stands por persona<input id="sPar" type="number" min="0" max="99" value="${p.paradas}"></label>
         <label title="Tope de tiempo por persona; 0 = sin tope">Tope de visita (min)<input id="sTie" type="number" min="0" max="600" value="${p.tiempoVisita}"></label>
+        <label title="Velocidad promedio al caminar sin gente alrededor">Velocidad al caminar (m/s)<input id="sVel" type="number" min="0.3" max="2.5" step="0.1" value="${p.velocidad}"></label>
         <label title="Qué visitante seguir con el marcador celeste (0 = el primero)">Seguir a la persona n.º<input id="sSeg" type="number" min="0" max="599" value="${p.seguir >= 0 ? p.seguir : Math.floor(p.visitantes / 2)}"></label>
       </div>
     </section>
@@ -487,7 +490,7 @@ function pintarPanelSim() {
       </table><p class="ayuda" style="margin-top:8px">${esc(simComp.texto)}</p></section>` : ''}`;
   const poner = (id, k, min, max) => { $(id).onchange = e => { const t = e.target; proyecto().sim = { ...(proyecto().sim || {}), [k]: t.type === 'checkbox' ? t.checked : t.tagName === 'SELECT' ? t.value : num(t.value, min, max, SIM_DEF[k]) }; avisar('sim'); }; };
   poner('sVis', 'visitantes', 1, 600); poner('sTur', 'turnos', 1, 20); poner('sLle', 'llegada', 1, 1440); poner('sTie', 'tiempoVisita', 0, 600); poner('sPer', 'permanencia', 0, 900);
-  poner('sPar', 'paradas', 0, 99); poner('sSeg', 'seguir', 0, 599); poner('sModo', 'modo'); poner('sHijo', 'hijoPrimero'); poner('sTan', 'tandas'); poner('sTam', 'tandaTam', 1, 300); poner('sCad', 'tandaCada', 1, 120);
+  poner('sPar', 'paradas', 0, 99); poner('sSeg', 'seguir', 0, 599); poner('sVel', 'velocidad', 0.3, 2.5); poner('sModo', 'modo'); poner('sHijo', 'hijoPrimero'); poner('sTan', 'tandas'); poner('sTam', 'tandaTam', 1, 300); poner('sCad', 'tandaCada', 1, 120);
   pintarEstadoSim();
 }
 /** Calcula toda la simulación de una vez, sin animarla. */
