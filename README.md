@@ -9,6 +9,10 @@ las ubicaciones.
 - **Guía por etapas**: el armado va paso a paso (Datos → Lugares → Equipos → Muebles → Recorrido →
   Sol → Folleto y PDF). Cada paso muestra solo lo que hace falta, dice qué falta y acerca la
   vista a los lugares elegidos.
+- **Pasillos y zonas libres**: se dibujan arrastrando sobre el plano; el armado automático y la
+  distribución de equipos los respetan y llenan el resto. «Llenar todo el lugar» busca la mayor
+  cantidad de sillas probando distintos corrimientos de las filas.
+- **Obstáculos**: la fuente no se puede elegir ni ocupar, y la gente la rodea al caminar.
 - **Distribución probada con simulación**: antes de ubicar los equipos se arman hasta 12
   distribuciones distintas, se simula la visita con cada una y queda la que menos aglomera;
   después se prueba cambiar de sitio los puestos donde se junta gente.

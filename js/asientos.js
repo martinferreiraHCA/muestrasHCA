@@ -1,6 +1,6 @@
 // Armado automático de un salón: filas de auditorio, anfiteatro, aula, mesas en U, mesas redondas o ronda.
 import { Simulacion } from './sim.js';
-import { puntoEnPoly, zonasLibres } from './niveles.js';
+import { puntoEnPoly, zonasLibres, enPasillo } from './niveles.js';
 import { itemDesdeTipo } from './estado.js';
 
 export const FORMAS = {
@@ -18,13 +18,27 @@ const PASO = 0.55, FILA = 0.95, PASILLO = 1.2;        // separación entre silla
  * Arma `personas` lugares en el espacio `esp` con la forma pedida, mirando hacia `frente`.
  * Devuelve { items, lugares, pedidas } sin tocar la muestra. Los elementos llevan `auto: 'sala'`.
  */
-export function armarSala(nivel, proy, esp, cat, { forma = 'auditorio', personas = 50, frente = 'arriba', escenario = false } = {}) {
-  const f = FRENTES[frente] || FRENTES.arriba, u = [-f[1], f[0]];
+export function armarSala(nivel, proy, esp, cat, op = {}) {
   const base = { ...proy, items: proy.items.filter(i => i.nivel === nivel.id && i.auto !== 'sala') };
   const xs = esp.poly.map(q => q[0]), ys = esp.poly.map(q => q[1]);
   const G = new Simulacion(nivel, base, {}, 1, { x0: Math.min(...xs) - 2, y0: Math.min(...ys) - 2, x1: Math.max(...xs) + 2, y1: Math.max(...ys) + 2 });
   const zonas = zonasLibres(nivel, base.items).map(([x, y, r]) => [x, y, r - 0.2]);          // puertas, entradas y salidas quedan despejadas
-  const libre = (x, y) => { if (zonas.some(z => Math.hypot(z[0] - x, z[1] - y) < z[2])) return false; const gx = Math.floor((x - G.x0) / 0.2), gy = Math.floor((y - G.y0) / 0.2); return gx >= 0 && gy >= 0 && gx < G.gw && gy < G.gh && !G.bloq[gy * G.gw + gx] && puntoEnPoly(x, y, esp.poly); };
+  const pasillos = base.items.filter(i => i.tipo === 'pasillo' && puntoEnPoly(i.x, i.y, esp.poly));
+  const ctx = { G, zonas, pasillos, base };
+  // Con «llenar», se prueban varios corrimientos de las filas y se deja el que más lugares da.
+  const fases = op.llenar && ['auditorio', 'aula'].includes(op.forma) ? [0, 0.14, 0.28, 0.41].flatMap(du => [0, 0.32, 0.64].map(ds => [du, ds])) : [[0, 0]];
+  let mejor = null;
+  for (const [du, ds] of fases) { const r = construir(nivel, esp, cat, { ...op, personas: op.llenar ? 5000 : op.personas }, ctx, du, ds); if (!mejor || r.lugares > mejor.lugares) mejor = r; }
+  return { ...mejor, pedidas: op.llenar ? mejor.lugares : op.personas, pasillos: pasillos.length };
+}
+
+function construir(nivel, esp, cat, { forma = 'auditorio', personas = 50, frente = 'arriba', escenario = false }, { G, zonas, pasillos, base }, du, ds) {
+  const f = FRENTES[frente] || FRENTES.arriba, u = [-f[1], f[0]];
+  const libre = (x, y) => {
+    if (zonas.some(z => Math.hypot(z[0] - x, z[1] - y) < z[2]) || enPasillo(base.items, x, y, 0.05)) return false;
+    const gx = Math.floor((x - G.x0) / 0.2), gy = Math.floor((y - G.y0) / 0.2); return gx >= 0 && gy >= 0 && gx < G.gw && gy < G.gh && !G.bloq[gy * G.gw + gx] && puntoEnPoly(x, y, esp.poly); };
+  // si hay pasillos dibujados, mandan ellos: no se agrega el pasillo central automático
+  const PAS = pasillos.length ? 0 : PASILLO;
   const pu = esp.poly.map(q => q[0] * u[0] + q[1] * u[1]), pf = esp.poly.map(q => q[0] * f[0] + q[1] * f[1]);
   const u0 = Math.min(...pu), u1 = Math.max(...pu), vmax = Math.max(...pf), fondo = vmax - Math.min(...pf), uc = (u0 + u1) / 2, ancho = u1 - u0;
   const P = (uu, s) => [u[0] * uu + f[0] * (vmax - s), u[1] * uu + f[1] * (vmax - s)];       // (a lo ancho, distancia al frente) -> plano
@@ -34,7 +48,7 @@ export function armarSala(nivel, proy, esp, cat, { forma = 'auditorio', personas
   const poner = (id, x, y, rot, extra) => { const it = itemDesdeTipo(cat(id), Math.round(x * 100) / 100, Math.round(y * 100) / 100, nivel.id); Object.assign(it, { rot: Math.round(rot), auto: 'sala', parada: false }, extra); items.push(it); return it; };
   const silla = (x, y, dx, dy) => { if (lugares >= personas || !cabe(x, y, 0.2)) return false; poner('silla', x, y, giro(dx, dy)); lugares++; return true; };
 
-  let s0 = 2.2;
+  let s0 = 2.2 + ds;
   if (escenario && forma !== 'ronda') {
     const w = Math.max(2, Math.min(5, ancho * 0.5)), [x, y] = P(uc, 1.4);
     if (cabe(x, y, 0.8)) { poner('tarima', x, y, giro(-f[0], -f[1]), { w, d: 2, etiqueta: 'Escenario' }); s0 = 3.6; }
@@ -43,20 +57,20 @@ export function armarSala(nivel, proy, esp, cat, { forma = 'auditorio', personas
 
   if (forma === 'auditorio') {
     for (let s = s0; s < fondo - 0.4 && lugares < personas; s += FILA)
-      for (let d = PASILLO / 2 + PASO / 2; d < mitad && lugares < personas; d += PASO) for (const lado of [-1, 1]) { const [x, y] = P(uc + lado * d, s); silla(x, y, f[0], f[1]); }
+      for (let d = PAS / 2 + PASO / 2; d < mitad + 0.3 && lugares < personas; d += PASO) for (const lado of [-1, 1]) { const [x, y] = P(uc + du + lado * d, s); silla(x, y, f[0], f[1]); }
   } else if (forma === 'anfiteatro') {
     const [cx, cy] = P(uc, Math.max(1, s0 - 1.6));                 // el punto al que miran todos
     for (let r = 2.6; r < fondo + ancho && lugares < personas; r += 1.0) {
       const dt = PASO / r;
-      for (let t = dt * 0.5 + (PASILLO / 2) / r; t < 1.45 && lugares < personas; t += dt) for (const lado of [-1, 1]) {
+      for (let t = dt * 0.5 + (PAS / 2) / r; t < 1.45 && lugares < personas; t += dt) for (const lado of [-1, 1]) {
         const a = lado * t, x = cx + r * (Math.sin(a) * u[0] - Math.cos(a) * f[0]), y = cy + r * (Math.sin(a) * u[1] - Math.cos(a) * f[1]);
         silla(x, y, cx - x, cy - y);
       }
     }
   } else if (forma === 'aula') {
     for (let s = s0; s < fondo - 0.9 && lugares < personas; s += 1.3)
-      for (let d = 0.5 + 0.45; d < mitad && lugares < personas; d += 0.9) for (const lado of [-1, 1]) {
-        const [mx, my] = P(uc + lado * d, s), [sx, sy] = P(uc + lado * d, s + 0.5);
+      for (let d = (pasillos.length ? 0 : 0.5) + 0.45; d < mitad + 0.3 && lugares < personas; d += 0.9) for (const lado of [-1, 1]) {
+        const [mx, my] = P(uc + du + lado * d, s), [sx, sy] = P(uc + du + lado * d, s + 0.5);
         if (lugares < personas && cabe(mx, my, 0.25) && cabe(sx, sy, 0.2)) { poner('mesa-escolar', mx, my, giro(f[0], f[1])); silla(sx, sy, f[0], f[1]); }
       }
   } else if (forma === 'ronda') {
@@ -84,5 +98,5 @@ export function armarSala(nivel, proy, esp, cat, { forma = 'auditorio', personas
       if (mesa(uc + lado * (half - 0.3), s, false)) for (const o of [-0.3, 0.3]) { const [x, y] = P(uc + lado * (half + 0.25), s + o); silla(x, y, -lado * u[0], -lado * u[1]); }
     }
   }
-  return { items, lugares, pedidas: personas };
+  return { items, lugares };
 }

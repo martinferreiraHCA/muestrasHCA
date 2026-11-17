@@ -68,6 +68,7 @@ export function fijarHerramienta(h) {
     espera: 'Tocá en el plano el lugar donde esperan los padres hasta que les toca entrar.',
     acceso: 'Tocá en el plano el punto de partida del recorrido (por ejemplo, el portón del colegio).',
     entrada: 'Tocá en el plano el lugar por donde ENTRA la gente.', salida: 'Tocá en el plano el lugar por donde SALE la gente.',
+    pasillo: 'Arrastrá para dibujar un pasillo o una zona que tiene que quedar libre. Podés dibujar varios; Esc para terminar.',
     rect: 'Arrastrá de una esquina a la opuesta para dibujar un espacio rectangular.',
     forma: 'Tocá un espacio para editarlo: arrastrá sus esquinas, los puntos chicos agregan una esquina, doble clic la quita, Supr borra el espacio.',
   }[h]);
@@ -203,6 +204,11 @@ function dibujar() {
     ctx.fillRect(a[0], a[1], b[0] - a[0], b[1] - a[1]); ctx.strokeRect(a[0], a[1], b[0] - a[0], b[1] - a[1]);
     cota(a, [b[0], a[1]]); cota([b[0], a[1]], b);
   }
+  for (const l of n.locales) if (l.obstaculo) {          // fuente u otro obstáculo: no se puede poner nada encima
+    ctx.beginPath(); l.poly.forEach((q, i) => i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1])); ctx.closePath();
+    ctx.fillStyle = 'rgba(77,171,247,.28)'; ctx.fill(); ctx.strokeStyle = '#1c7ed6'; ctx.lineWidth = 1.5 * px; ctx.stroke();
+    if (k > 5) { const t = Math.max(10 * px, Math.min(0.4, 12 * px)); ctx.font = `600 ${t}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#1864ab'; ctx.fillText(l.nombre, l.cx, l.cy - t * 0.55); ctx.font = `${t * 0.8}px system-ui, sans-serif`; ctx.fillText('no se ocupa', l.cx, l.cy + t * 0.6); }
+  }
   if (ui.zonas?.length) {          // zonas que se dejan libres delante de puertas, entradas y salidas
     ctx.fillStyle = 'rgba(214,40,40,.10)'; ctx.strokeStyle = 'rgba(214,40,40,.5)'; ctx.lineWidth = px; ctx.setLineDash([4 * px, 3 * px]);
     for (const [x, y, r] of ui.zonas) { ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill(); ctx.stroke(); }
@@ -334,7 +340,7 @@ function alBajar(e) {
     }
     if (e.shiftKey) { accion = { ...base, tipo: 'marco', x0: x, y0: y, x1: x, y1: y }; return; }
   }
-  if (ui.herramienta === 'rect') { const q = imanPunto(x, y); accion = { ...base, tipo: 'rect', a: q, b: q }; return; }
+  if (ui.herramienta === 'rect' || ui.herramienta === 'pasillo') { const q = imanPunto(x, y); accion = { ...base, tipo: 'rect', a: q, b: q, pasillo: ui.herramienta === 'pasillo' }; return; }
   if (ui.herramienta === 'forma') {
     const act = espacioActivo(), tol = 9 / vista.k;
     if (act) {
@@ -400,6 +406,13 @@ function alSoltar(e) {
   if (a.tipo === 'vert' || a.tipo === 'moverEsp') { if (a.movido) avisar('espacios'); return; }
   if (a.tipo === 'rect') {
     const [x0, y0] = a.a, [x1, y1] = a.b; pedir();
+    if (a.pasillo) {           // pasillo o zona libre: queda como un elemento que se puede mover, girar y cambiar de tamaño
+      if (!a.movido || Math.abs(x1 - x0) < 0.3 || Math.abs(y1 - y0) < 0.3) return;
+      marcar();
+      const it = itemDesdeTipo(catalogo().find(c => c.id === 'pasillo'), (x0 + x1) / 2, (y0 + y1) / 2, ui.nivel.id);
+      Object.assign(it, { w: Math.round(Math.abs(x1 - x0) * 100) / 100, d: Math.round(Math.abs(y1 - y0) * 100) / 100 });
+      proyecto().items.unshift(it); avisar('items'); return;          // se puede seguir dibujando otro
+    }
     if (a.movido && Math.abs(x1 - x0) > 0.3 && Math.abs(y1 - y0) > 0.3) crearEspacio([[x0, y0], [x1, y0], [x1, y1], [x0, y1]]);
     return;
   }

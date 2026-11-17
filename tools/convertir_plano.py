@@ -163,6 +163,7 @@ ARBOLES = [(9.2, 4.6, 3.5), (8.3, 25, 2.6), (16.2, 22.7, 1), (20.2, 25.2, 1.5), 
            (107.9, 8.7, 1.7), (108.8, 18.2, 1.7), (109.4, 27.9, 1.8), (110.6, 39, 1.8), (111.7, 52.9, 1.8), (112.8, 65.2, 1.8)]
 # Cada edificio se puede mostrar u ocultar en la app. 'proyecto': todavía no existe (obra futura), y
 # viene oculto por defecto para no adelantar lo que no está construido. 'rects_<nivel>': zonas extra.
+OBSTACULOS = {'Fuente'}
 EDIFICIOS = [
     {'id': 'noroeste', 'nombre': 'Edificio noroeste (laboratorio y aulas)', 'rects': [(19.5, 6.5, 52.6, 23.6)]},
     {'id': 'norte', 'nombre': 'Edificio norte (biblioteca y aulas)', 'rects': [(53.4, 3.7, 98.8, 23.3)]},
@@ -196,7 +197,7 @@ CURADO = {
             ('Patio central', [(41, 23), (45.4, 23), (45.4, 17.6), (69, 17.6), (69, 20.4), (75.6, 20.4), (75.6, 23.2), (77.4, 23.2),
                                (77.4, 32.5), (49, 32.5), (49, 45.2), (41, 45.2)], True, 'aulas2010'),
             # notas del plano: «FUENTE EXISTENTE - A DEMOLER», y canchas con «pav. césped sintético» (capa aparte)
-            ('Fuente', [(36.8, 26.6), (41, 26.6), (41, 29.2), (36.8, 29.2)], True),
+            ('Fuente', [(36.15, 27.35), (40.35, 27.35), (40.35, 29.95), (36.15, 29.95)], True),
             ('Cancha de césped sintético (fútbol y básquetbol)', [(96.7, 57.7), (104.5, 57.7), (104.5, 67.4), (96.7, 67.4)], True),
             ('Patio este', [(77.6, 23.2), (102, 23.2), (103, 28), (100, 33), (96, 41.5), (82, 41.5), (79.5, 33), (77.6, 30)], True),
             ('Pasaje entre edificios', [(52.3, 8.3), (58.3, 8.3), (58.3, 17.4), (52.3, 17.4)], True),
@@ -486,6 +487,7 @@ for nid, nombre, (ax, ay, bx, by) in NIVELES:
         dd = cv2.distanceTransform(mk, cv2.DIST_L2, 3); qy, qx = np.unravel_index(int(dd.argmax()), dd.shape)
         l = {'nombre': nom, 'area': round(ar, 1), 'poly': [[cm(x), cm(y)] for x, y in pts], 'cx': cm(xs.min()+(qx-1)*0.2), 'cy': cm(ys.min()+(qy-1)*0.2)}
         if ext: l['exterior'] = True; l['edif'] = 255        # los patios trazados no son de ningún edificio
+        if nom in OBSTACULOS: l['obstaculo'] = True      # no es un lugar para usar: no se puede ocupar ni pisar
         if sin and sin[0]: l['sin'] = sin[0]             # solo si ese edificio está oculto
         if len(sin) > 1: l['con'] = sin[1]              # solo si ese edificio está visible
         locales.append(l)

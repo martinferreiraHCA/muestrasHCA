@@ -21,6 +21,7 @@ const A = {
   'lugar': ['En cuál de los lugares elegidos se arma la distribución.', 'Si elegiste el Auditorio y el Patio, acá decís en cuál van las sillas.'],
   'forma': ['Cómo se acomodan las sillas y mesas.', 'Auditorio: filas rectas. Anfiteatro: filas curvas alrededor del frente. Aula: una mesa por persona. U: mesas en herradura. Ronda: todos en círculo.'],
   'personas': ['Cuántos lugares para sentarse querés.', 'Si pedís 120 y en el salón entran 96, el sistema pone 96 y te avisa.'],
+  'llenar todo el lugar': ['Ignora la cantidad de personas y pone todas las sillas que entran.', 'En el salón multiuso, en auditorio, entran unas 60. Prueba varios corrimientos de las filas y deja el que más da.'],
   'el frente esta': ['Hacia qué lado de la pantalla miran las sillas (donde está el escenario o el pizarrón).', '«Arriba»: todos miran hacia el borde superior del plano.'],
   // --- propiedades ---
   'ancho (m)': ['Medida del mueble de lado a lado, en metros.', '1,2 es una mesa de un metro veinte de frente.'],

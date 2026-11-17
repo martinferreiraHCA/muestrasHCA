@@ -35,7 +35,7 @@ export async function cargarNivel(info) {
     edif: d.edif || null, huellasEdif: d.huellasEdif || [],
     huellas: (d.huellas || []).map(h => h.map(p => [p[0] / 100, p[1] / 100])), arboles: (d.arboles || []).map(a => a.map(v => v / 100)), detalle: aMetros(d.detalle),
     locales: d.locales.map(l => ({
-      id: l.id, nombre: l.nombre, auto: !!l.auto, exterior: !!l.exterior, edif: l.edif ?? 255, sin: l.sin || null, con: l.con || null, area: l.area,
+      id: l.id, nombre: l.nombre, auto: !!l.auto, exterior: !!l.exterior, obstaculo: !!l.obstaculo, edif: l.edif ?? 255, sin: l.sin || null, con: l.con || null, area: l.area,
       poly: l.poly.map(p => [p[0] / 100, p[1] / 100]),
     })),
   };
@@ -54,6 +54,11 @@ export function zonasLibres(nivel, items) {
   const z = nivel.puertas.map(([x, y, r]) => [x, y, r + 0.8]);
   for (const it of items) if (['entrada', 'salida', 'acceso', 'espera'].includes(it.tipo)) z.push([it.x, it.y, Math.hypot(it.w, it.d) / 2 + (it.tipo === 'espera' ? 0.3 : 1.2)]);
   return z;
+}
+/** ¿El punto cae en un pasillo o zona libre dibujada? (con un margen opcional en metros) */
+export function enPasillo(items, x, y, m = 0) {
+  for (const it of items) if (it.tipo === 'pasillo') { const [lx, ly] = aLocal(it, x, y); if (Math.abs(lx) <= it.w / 2 + m && Math.abs(ly) <= it.d / 2 + m) return true; }
+  return false;
 }
 /** ¿El rectángulo {x0, y0, x1, y1} toca alguno de los círculos? */
 export const tocaZona = (r, zonas) => zonas.some(([x, y, rad]) => Math.hypot(x - Math.max(r.x0, Math.min(x, r.x1)), y - Math.max(r.y0, Math.min(y, r.y1))) < rad);
@@ -91,7 +96,7 @@ export function espaciosDe(nivel, proy) {
     return { id: e.id, nombre: e.nombre, poly: e.poly, area: Math.round(areaPoly(e.poly) * 10) / 10, cx, cy, propio: true };
   });
   const formas = proy.formas || {}, ocultos = proy.ocultos || [];
-  const delPlano = nivel.locales.filter(l => !ocultos.includes(l.id)).map(l => {
+  const delPlano = nivel.locales.filter(l => !ocultos.includes(l.id) && !l.obstaculo).map(l => {
     const e = { ...l, nombre: proy.renombres[l.id] || l.nombre }, poly = formas[l.id];
     if (poly) { [e.cx, e.cy] = centroide(poly); e.poly = poly; e.area = Math.round(areaPoly(poly) * 10) / 10; e.editado = true; }
     return e;

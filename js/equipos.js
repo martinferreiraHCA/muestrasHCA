@@ -2,7 +2,7 @@
 // Cada equipo reserva el lugar de su mueble y de sus estudiantes; se ubican contra las paredes,
 // lo más separados posible, y en islas solo si no queda pared.
 import { Simulacion } from './sim.js';
-import { espaciosElegidos, puntoEnPoly, margenEstudiantes, zonasLibres, tocaZona } from './niveles.js';
+import { espaciosElegidos, puntoEnPoly, margenEstudiantes, zonasLibres, tocaZona, enPasillo } from './niveles.js';
 import { itemDesdeTipo } from './estado.js';
 
 const C = 0.2;                       // misma grilla que el simulador
@@ -46,7 +46,7 @@ export async function distribuir(nivel, proy, equipos, tipo, porMesa = 0, simula
   const xs = espacios.flatMap(e => e.poly.map(q => q[0])), ys = espacios.flatMap(e => e.poly.map(q => q[1]));
   const area = { x0: Math.max(0, Math.min(...xs) - 4), y0: Math.max(0, Math.min(...ys) - 4), x1: Math.min(nivel.ancho, Math.max(...xs) + 4), y1: Math.min(nivel.alto, Math.max(...ys) + 4) };
   const G = new Simulacion(nivel, base, {}, 1, area);
-  const libre = (x, y) => { const gx = Math.floor((x - G.x0) / C), gy = Math.floor((y - G.y0) / C); return gx >= 0 && gy >= 0 && gx < G.gw && gy < G.gh && !G.bloq[gy * G.gw + gx]; };
+  const libre = (x, y) => { const gx = Math.floor((x - G.x0) / C), gy = Math.floor((y - G.y0) / C); return gx >= 0 && gy >= 0 && gx < G.gw && gy < G.gh && !G.bloq[gy * G.gw + gx] && !enPasillo(base.items, x, y); };
   const dentroLibre = (r, poly, m = 0) => {
     for (let y = r.y0 - m + C / 2; y < r.y1 + m; y += C) for (let x = r.x0 - m + C / 2; x < r.x1 + m; x += C) if (!libre(x, y) || !puntoEnPoly(x, y, poly)) return false;
     return true;

@@ -116,7 +116,7 @@ export function generarFolleto(nivel, suelo, proy, opciones = {}) {
   }
   const ext = suelo.locales.filter(l => l.exterior && !(nivel.id === 'pb' && proy.ocultos?.includes(l.id)));
   capa('exteriores', 'Patios y exteriores', ext.map(l => {
-    const cancha = /cancha/i.test(l.nombre), verde = /arbolado|jard[ií]n/i.test(l.nombre), col = cancha ? T.cancha : verde ? T.cesped2 : T.arena;
+    const cancha = /cancha/i.test(l.nombre), verde = /arbolado|jard[ií]n/i.test(l.nombre), col = l.obstaculo ? '#9CCBEA' : cancha ? T.cancha : verde ? T.cesped2 : T.arena;
     let s = poli(l.poly, `fill="${col}" stroke="${col}" stroke-width="${n1(0.9 * k)}" ${redondo}`);
     if (cancha) {
       const xs = l.poly.map(q => q[0]), ys = l.poly.map(q => q[1]), x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys), lw = `fill="none" stroke="${T.linea}" stroke-width="${n1(0.18 * k)}"`;

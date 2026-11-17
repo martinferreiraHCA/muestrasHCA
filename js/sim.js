@@ -1,7 +1,7 @@
 // Simulación de circulación: visitantes que entran, recorren las paradas (stands, mesas) y salen.
 // Modelo: grilla de 20 cm con obstáculos, campos de distancia (Dijkstra) hacia cada destino
 // y separación entre personas; la velocidad baja cuando aumenta la densidad.
-import { areaTrabajo, aLocal, esRedondo, posEstudiantes } from './niveles.js';
+import { areaTrabajo, aLocal, esRedondo, posEstudiantes, puntoEnPoly } from './niveles.js';
 
 const C = 0.2;            // tamaño de celda (m)
 const CH = 0.5;           // celda del mapa de calor (m)
@@ -19,7 +19,7 @@ const FIJOS = ['mesa', 'mesa-redonda', 'caja', 'cilindro', 'panel', 'banco', 'zo
 export const esEntrada = it => it.tipo === 'entrada';
 export const esSalida = it => it.tipo === 'salida';
 export function esParada(it) {
-  if (esEntrada(it) || esSalida(it) || it.tipo === 'acceso' || it.tipo === 'espera' || it.modelo === 'persona' || it.modelo === 'texto' || it.modelo === 'silla') return false;
+  if (esEntrada(it) || esSalida(it) || it.tipo === 'acceso' || it.tipo === 'espera' || it.tipo === 'pasillo' || it.modelo === 'persona' || it.modelo === 'texto' || it.modelo === 'silla') return false;
   return it.parada ?? (it.modelo === 'stand' || (!!it.etiqueta && FIJOS.includes(it.modelo)));
 }
 
@@ -49,6 +49,10 @@ export class Simulacion {
         const w = it.w / 2, d = it.d / 2, f = -d + it.d * 0.6;
         for (const [p, q] of [[[-w, f], [-w, -d]], [[-w, -d], [w, -d]], [[w, -d], [w, f]]]) this.#linea(...M(...p), ...M(...q));
       } else this.#celdasCerca(it, 0, (i) => { this.bloq[i] = 1; }, true);
+    }
+    for (const l of nivel.locales) if (l.obstaculo) {          // fuentes y otros obstáculos: no se pisan ni se ocupan
+      const xs = l.poly.map(q => q[0]), ys = l.poly.map(q => q[1]);
+      for (let y = Math.min(...ys); y <= Math.max(...ys); y += C / 2) for (let x = Math.min(...xs); x <= Math.max(...xs); x += C / 2) { const i = this.#idx(x, y); if (i >= 0 && puntoEnPoly(x, y, l.poly)) this.bloq[i] = 1; }
     }
     for (const [cx, cy, r] of area?.circulos || [])           // obstáculos redondos extra (troncos de árboles)
       for (let y = cy - r; y <= cy + r; y += C * 0.9) for (let x = cx - r; x <= cx + r; x += C * 0.9) { const i = this.#idx(x, y); if (i >= 0 && Math.hypot(x - cx, y - cy) <= r) this.bloq[i] = 1; }

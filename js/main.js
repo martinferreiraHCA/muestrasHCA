@@ -230,18 +230,18 @@ function pintarSala() {
   const l = lugares(), q = proyecto().sala || {};
   $('saLugar').innerHTML = l.map((e, i) => `<option value="${e.id}" ${(lugar >= 0 ? i === lugar : e.id === q.lugar) ? 'selected' : ''}>${esc(e.nombre)} (${Math.round(e.area)} m²)</option>`).join('');
   if (!$('saForma').options.length) $('saForma').innerHTML = Object.entries(FORMAS).map(([k, t]) => `<option value="${k}">${t}</option>`).join('');
-  if (q.forma) { $('saForma').value = q.forma; $('saPersonas').value = q.personas; $('saFrente').value = q.frente; $('saEscenario').checked = !!q.escenario; }
+  if (q.forma) { $('saForma').value = q.forma; $('saPersonas').value = q.personas; $('saFrente').value = q.frente; $('saEscenario').checked = !!q.escenario; $('saLlenar').checked = !!q.llenar; }
 }
 const enLugar = (id, it) => { const e = lugares().find(x => x.id === id); return e && puntoEnPoligono(it.x, it.y, e.poly); };
 function armarSalaAhora() {
   const p = proyecto(), e = lugares().find(x => x.id === $('saLugar').value);
   if (!e) return aviso('Primero elegí un lugar.');
-  const op = { forma: $('saForma').value, personas: num($('saPersonas').value, 1, 1500, 60) | 0, frente: $('saFrente').value, escenario: $('saEscenario').checked };
+  const op = { forma: $('saForma').value, personas: num($('saPersonas').value, 1, 1500, 60) | 0, frente: $('saFrente').value, escenario: $('saEscenario').checked, llenar: $('saLlenar').checked };
   const r = armarSala(nivel, p, e, id => E.catalogo().find(t => t.id === id), op);
   marcar(); p.sala = { ...op, lugar: e.id };
   p.items = [...p.items.filter(i => !(i.auto === 'sala' && i.nivel === nivel.id && puntoEnPoligono(i.x, i.y, e.poly))), ...r.items];
   ui.seleccion.clear(); avisar('items'); P.centrarEn(e.poly);
-  $('saResultado').innerHTML = r.lugares >= r.pedidas ? `<b>${r.lugares} lugares armados</b> en ${esc(e.nombre)}.`
+  $('saResultado').innerHTML = r.lugares >= r.pedidas ? `<b>${r.lugares} lugares armados</b> en ${esc(e.nombre)}${op.llenar ? ', el máximo que encontré con esta forma' : ''}${r.pasillos ? `, respetando ${r.pasillos} pasillo${r.pasillos > 1 ? 's' : ''} o zona${r.pasillos > 1 ? 's' : ''} libre${r.pasillos > 1 ? 's' : ''}` : ''}.`
     : `<b>Entraron ${r.lugares} de ${r.pedidas}.</b> <span class="alerta">En ${esc(e.nombre)} no hay lugar para más con esta forma. Probá otra forma, otro frente o un lugar más grande.</span>`;
 }
 function quitarSala() {
@@ -894,6 +894,7 @@ function conectar() {
   $('chkTodoPanel').onchange = () => irEtapa(etapa(), false);
   $('eqTexto').oninput = () => { contarEquipos(); }; $('eqTexto').onchange = $('eqTipo').onchange = $('eqPorDef').onchange = $('eqPorMesa').onchange = guardarEquipos;
   $('btnDistribuir').onclick = distribuirEquipos;
+  $('btnPasillo').onclick = () => ui.alHerramienta('pasillo');
   $('btnArmarSala').onclick = armarSalaAhora; $('btnQuitarSala').onclick = quitarSala;
   $('btnPDF2').onclick = () => exportarPDF();
   $('btn3D').onclick = () => ver('iso'); $('btnVolverPlanta').onclick = () => ver('plano');
