@@ -84,14 +84,16 @@ export class Simulacion {
       return false;
     };
     for (const it of items.filter(esParada)) {
+      let tapado = false;
       const f = it.modelo === 'zona' ? fuentes(it, 0)
-        : it.modelo === 'stand' ? fuentes(it, 0.9, (lx, ly) => Math.abs(lx) < it.w / 2 - 0.15 && ly > -it.d / 2 + 0.25)
+        : it.modelo === 'stand' ? fuentes(it, 1.3, (lx, ly) => Math.abs(lx) < it.w / 2 + 0.2 && ly > it.d / 2 - 0.35)       // frente a la abertura, no adentro con los estudiantes
         : (() => {      // los visitantes se paran frente a la mesa (el lado opuesto a los estudiantes), no a los costados ni atrás
           const visible = i => !cruzaMuro(this.#centro(i), [it.x, it.y]);
-          const frente = fuentes(it, 1.3, (lx, ly) => ly > it.d / 2 + 0.1 && Math.abs(lx) <= it.w / 2 + 0.3).filter(visible);
-          return frente.length ? frente : fuentes(it, 0.75).filter(visible);          // si el frente está tapado, alrededor
+          const frente = fuentes(it, 1.3, (lx, ly) => ly > it.d / 2 + 0.2 && Math.abs(lx) <= it.w / 2 + 0.3).filter(visible);
+          if (frente.length) return frente;
+          tapado = true; return fuentes(it, 0.75).filter(visible);          // si el frente está tapado, alrededor
         })();
-      if (f.length) this.paradas.push({ it, nombre: it.etiqueta || it.nombre, fuentes: f, ocup: 0, visitas: 0 });
+      if (f.length) this.paradas.push({ it, nombre: it.etiqueta || it.nombre, fuentes: f, ocup: 0, visitas: 0, todoAlrededor: tapado });
     }
     this.falta = !this.entradas.length ? 'Falta marcar al menos una Entrada (está en la lista de elementos).'
       : null;
@@ -243,6 +245,12 @@ export class Simulacion {
     }
     if (a.destino >= 0) { a.estado = 'camina'; this.paradas[a.destino].ocup++; }
   }
+  /** ¿El punto está del lado del frente de la parada? (el lado opuesto a los estudiantes) */
+  #delante(n, x, y) {
+    const p = this.paradas[n]; if (!p || p.todoAlrededor || p.it.modelo === 'zona') return true;
+    const [, ly] = aLocal(p.it, x, y);
+    return ly > (p.it.modelo === 'stand' ? p.it.d / 2 - 0.5 : p.it.d / 2 + 0.02);
+  }
   #salio(a) { this.fin.push(a.t); this.esperas.push(a.tEsp); this.tParados.push(a.tPar); if (a.seguido) a.fin = this.t; }
 
   /** Avanza la simulación `dt` segundos (por defecto un paso normal). */
@@ -312,7 +320,9 @@ export class Simulacion {
         if (!(d0 >= a.mejor - 0.05)) { a.mejor = d0; a.tMejor = this.t; }
         const trabado = this.t - a.tMejor > 25;
         // llega al destino; si el puesto está lleno, se queda mirando desde atrás
-        if (d0 <= C * 1.2 || (a.destino >= 0 && d0 < 2.2 && a.dens >= 1.6) || (trabado && (a.destino < 0 || d0 < 4))) {
+        // (siempre del lado del frente de la mesa, nunca a los costados ni atrás)
+        const fr = a.destino < 0 || this.#delante(a.destino, a.x, a.y);
+        if ((d0 <= C * 1.2 && fr) || d0 === 0 || (a.destino >= 0 && fr && d0 < 2.2 && a.dens >= 1.6) || (trabado && (a.destino < 0 || (fr && d0 < 4)))) {
           if (a.destino >= 0) { a.estado = 'parado'; a.espera = P.permanencia * (a.seguido ? 1 : 0.6 + this.rnd() * 0.8) * (a.destino === a.hijo ? 2 : 1); }
           else { this.#salio(a); continue; }                     // salió
         } else if (!isFinite(d0) || trabado) {
@@ -334,9 +344,11 @@ export class Simulacion {
       const sub = Math.max(1, Math.ceil(Math.hypot(mx, my) / (C * 0.45)));       // sub-pasos: nadie atraviesa un muro
       for (let q = 0; q < sub; q++) {
         const ux = mx / sub, uy = my / sub;
-        if (this.#libre(a.x + ux, a.y + uy)) { a.x += ux; a.y += uy; }
-        else if (this.#libre(a.x + ux, a.y)) a.x += ux;
-        else if (this.#libre(a.x, a.y + uy)) a.y += uy;
+        // quien está mirando un stand puede correrse para hacer lugar, pero no rodear la mesa
+        const ok = (x, y) => this.#libre(x, y) && (a.estado !== 'parado' || this.#delante(a.destino, x, y));
+        if (ok(a.x + ux, a.y + uy)) { a.x += ux; a.y += uy; }
+        else if (ok(a.x + ux, a.y)) a.x += ux;
+        else if (ok(a.x, a.y + uy)) a.y += uy;
         else break;
       }
       if (a.seguido) { const u = a.rastro[a.rastro.length - 1], d = Math.hypot(a.x - u[0], a.y - u[1]); if (d > 0.3) { a.rastro.push([a.x, a.y]); a.camino += d; } }

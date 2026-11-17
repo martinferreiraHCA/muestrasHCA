@@ -126,6 +126,9 @@ export function dibujarItem(c, it, k, sel) {
     for (let m = 1; m < (it.mesas | 0); m++) {          // varias mesas juntas: se marca la unión
       c.beginPath(); c.moveTo(-w / 2 + m * w / it.mesas, -d / 2); c.lineTo(-w / 2 + m * w / it.mesas, d / 2); c.strokeStyle = 'rgba(0,0,0,.45)'; c.lineWidth = px; c.stroke();
     }
+    if (['mesa', 'banco', 'caja'].includes(it.modelo) && (it.etiqueta || it.estudiantes) && w * k > 14) {      // marca del frente: de ese lado se para el público
+      const t = Math.min(0.16, d * 0.3); c.beginPath(); c.moveTo(-t, d / 2); c.lineTo(t, d / 2); c.lineTo(0, d / 2 + t * 1.1); c.closePath(); c.fillStyle = 'rgba(0,0,0,.6)'; c.fill();
+    }
     if (it.modelo === 'silla') {
       c.beginPath(); c.moveTo(-w / 2, -d / 2 + d * 0.16); c.lineTo(w / 2, -d / 2 + d * 0.16); c.strokeStyle = 'rgba(0,0,0,.5)'; c.lineWidth = px; c.stroke();
     }
