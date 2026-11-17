@@ -415,7 +415,7 @@ export class Simulacion {
       causa = 'Es un cruce: por ahí pasan los que van de un puesto a otro en direcciones distintas.';
       sug.push(['guiado', 'Usar recorrido guiado, en un solo sentido.'], ['llegada', 'Hacer que lleguen más repartidos.'], [null, 'Dejar ese sector libre de muebles.']);
     }
-    return (this.#diag = { x, y, tipo, corto, causa, sugerencias: sug, ancho, pct: r.pctAglom });
+    return (this.#diag = { x, y, tipo, corto, causa, sugerencias: sug, ancho, pct: r.pctAglom, parada: tipo === 'stand' ? cerca.p.nombre : null });
   }
   #diag;
 

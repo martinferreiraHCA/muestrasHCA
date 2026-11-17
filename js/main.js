@@ -116,7 +116,7 @@ const ETAPAS = [
   { id: 'lugares', t: 'Lugares', titulo: 'Elegir los lugares', vista: 'plano', herr: 'espacios',
     ayuda: 'Tocá en el plano los lugares donde va a ser la muestra, o tildalos en la lista. Si un límite está mal, corregilo con «Editar forma»; si falta un lugar, dibujalo con Rectángulo o Polígono.' },
   { id: 'equipos', t: 'Equipos', titulo: 'Cargar los equipos', vista: 'plano', herr: 'mover',
-    ayuda: 'Escribí los equipos, uno por renglón, y apretá «Distribuir»: el sistema ubica un puesto por equipo en los lugares elegidos, dejando libre la circulación. Si no tenés equipos, seguí al paso siguiente.' },
+    ayuda: 'Escribí los equipos, uno por renglón, y apretá «Distribuir»: el sistema arma varias distribuciones, simula la visita con cada una y deja la que mejor circula. Conviene marcar antes la Entrada (panel de la izquierda). Si no tenés equipos, seguí al paso siguiente.' },
   { id: 'muebles', t: 'Muebles', titulo: 'Distribuir los muebles', vista: 'plano', herr: 'mover',
     ayuda: 'Podés armar el salón solo (auditorio, anfiteatro, aula…) con el panel de la izquierda, o a mano: tocá un elemento de la lista para agregarlo y arrastralo a su lugar. Con uno seleccionado, a la derecha podés cambiarle el nombre, los estudiantes y repetirlo en filas.' },
   { id: 'recorrido', t: 'Recorrido', titulo: 'Entrada, salida y circulación', vista: 'sim', herr: 'mover',
@@ -196,13 +196,30 @@ async function distribuirEquipos() {
   if (!lugares().length) return aviso('Primero elegí los lugares de la muestra.');
   const previos = p.items.filter(i => i.equipo && i.nivel === nivel.id).length;
   if (previos && !await confirmar(`Ya hay ${previos} puestos de equipos ubicados. ¿Los reemplazo por una distribución nueva?`, 'Reemplazar')) return;
-  aviso('Distribuyendo…'); await new Promise(f => setTimeout(f, 30));
-  const r = distribuir(nivel, p, l, E.catalogo().find(t => t.id === $('eqTipo').value), num($('eqPorMesa').value, 0, 40, 4));
+  aviso('Preparando las distribuciones…'); $('btnDistribuir').disabled = true; await new Promise(f => setTimeout(f, 30));
+  // Para elegir la mejor ubicación se simula la visita con cada alternativa. Hace falta una entrada: la marcada o,
+  // en planta baja, el punto por donde se llega al lugar caminando desde el portón.
+  const fijos = p.items.filter(i => i.nivel === nivel.id && !i.equipo);
+  let entProv = null;
+  if (!fijos.some(esEntrada) && nivel.id === 'pb') {
+    const dest = [...lugares()].sort((a, b) => b.area - a.area)[0], ruta = new Simulacion(nivel, { ...p, items: [] }, {}, 1, { x0: 0, y0: 0, x1: nivel.ancho, y1: nivel.alto }).camino([102.4, 46.6], [dest.cx, dest.cy], 1.4);
+    const k = ruta ? ruta.findIndex(q => lugares().some(e => puntoEnPoligono(q[0], q[1], e.poly))) : -1;
+    if (k >= 0) { const q = ruta[Math.min(ruta.length - 1, k + 6)]; entProv = { ...E.itemDesdeTipo(E.catalogo().find(t => t.id === 'entrada'), q[0], q[1], nivel.id) }; }
+  }
+  const q = parSim(), vis = Math.min(q.visitantes, 80), parEv = { ...q, visitantes: vis, porMinuto: Math.max(q.porMinuto, vis / 6), tandas: false, seguir: -1 };
+  const simular = fijos.some(esEntrada) || entProv ? items => {
+    const s = new Simulacion(nivel, { ...p, items: [...fijos, ...(entProv ? [entProv] : []), ...items] }, parEv); const r = s.completar(3600);
+    return { r, diag: s.diagnostico() };
+  } : null;
+  const r = await distribuir(nivel, p, l, E.catalogo().find(t => t.id === $('eqTipo').value), num($('eqPorMesa').value, 0, 40, 4), simular,
+    async t => { $('eqResultado').textContent = t; aviso(t); await new Promise(f => setTimeout(f, 0)); });
+  if (entProv && r.ensayos) r.resumen += ' Como no hay Entrada marcada, supuse que la gente llega desde el portón; si entra por otro lado, marcá la Entrada y volvé a distribuir.';
   marcar();
   p.items = [...p.items.filter(i => !(i.equipo && i.nivel === nivel.id)), ...r.items];
   ui.seleccion.clear(); avisar('items'); P.encuadrar();
   $('eqResultado').innerHTML = `<b>${r.items.length} de ${l.length} equipos ubicados${r.mesas > r.items.length ? `, con ${r.mesas} mesas` : ''}.</b> ${esc(r.resumen)}` +
     (r.sinLugar.length ? ` <span class="alerta">No entraron: ${esc(r.sinLugar.map(e => e.nombre).join(', '))}. Elegí más lugares o un mueble más chico.</span>` : '');
+  $('btnDistribuir').disabled = false; if (vistaSim) simCrear();
   aviso(`${r.items.length} equipos ubicados.`);
 }
 

@@ -35,11 +35,13 @@ const FR = { 0: [0, 1], 90: [-1, 0], 180: [0, -1], 270: [1, 0] };          // ha
 /**
  * Distribuye los equipos en los lugares elegidos del nivel. Cada equipo reserva el lugar de su mueble más el
  * de sus estudiantes (pegados a las caras de la mesa), contra una pared y con el frente despejado.
+ * Si se pasa `simular(items) -> { r, diag }`, arma varias alternativas, las prueba con el simulador de
+ * circulación, se queda con la mejor y después intenta mejorarla moviendo los puestos donde se junta gente.
  * Devuelve { items, sinLugar, resumen } sin modificar la muestra.
  */
-export function distribuir(nivel, proy, equipos, tipo, porMesa = 0) {
+export async function distribuir(nivel, proy, equipos, tipo, porMesa = 0, simular = null, progreso = async () => {}) {
   const espacios = espaciosElegidos(nivel, proy);
-  if (!espacios.length) return { items: [], sinLugar: equipos, resumen: 'No hay lugares elegidos en este nivel.' };
+  if (!espacios.length) return { items: [], sinLugar: equipos, mesas: 0, resumen: 'No hay lugares elegidos en este nivel.' };
   const base = { ...proy, items: proy.items.filter(i => !i.equipo && i.nivel === nivel.id) };      // lo ya ubicado a mano se respeta
   const xs = espacios.flatMap(e => e.poly.map(q => q[0])), ys = espacios.flatMap(e => e.poly.map(q => q[1]));
   const area = { x0: Math.max(0, Math.min(...xs) - 4), y0: Math.max(0, Math.min(...ys) - 4), x1: Math.min(nivel.ancho, Math.max(...xs) + 4), y1: Math.min(nivel.alto, Math.max(...ys) + 4) };
@@ -90,44 +92,90 @@ export function distribuir(nivel, proy, equipos, tipo, porMesa = 0) {
   // dos puestos enfrentados pueden compartir el pasillo, pero ninguno invade el frente del otro
   const seMolestan = (c, p, sep) => choca(c.r, p.r, sep) || choca(c.r, conFrente(p.r, p.rot, FRENTE), 0.2) || choca(conFrente(c.r, c.rot, FRENTE), p.r, 0.2);
 
+  const ORDEN = { grandes: (a, b) => b.estudiantes - a.estudiantes, chicos: (a, b) => a.estudiantes - b.estudiantes, lista: () => 0 };
   /** Ubica una lista de equipos en un espacio con una separación mínima entre puestos. Devuelve los que no entraron. */
-  function ubicar(e, lista, sep, puestos) {
+  function ubicar(e, lista, sep, puestos, v) {
     const afuera = [];
-    for (const q of [...lista].sort((a, b) => b.estudiantes - a.estudiantes)) {
-      const h = huellaDe(q), S = sitios(e, h.w, h.d);
-      const c = S.per.find(c => !puestos.some(p => seMolestan(c, p, sep))) || S.isl.find(c => !puestos.some(p => choca(c.r, conFrente(p.r, p.rot, p.isla ? 0 : FRENTE), PASILLO - 0.2)));
+    for (const q of [...lista].sort(ORDEN[v.orden])) {
+      const h = huellaDe(q), S = sitios(e, h.w, h.d), k = Math.floor(S.per.length * v.giro / 4);
+      const per = k ? [...S.per.slice(k), ...S.per.slice(0, k)] : S.per;            // por qué pared se empieza
+      const enPared = () => per.find(c => !puestos.some(p => seMolestan(c, p, sep)));
+      const enIsla = () => S.isl.find(c => !puestos.some(p => choca(c.r, conFrente(p.r, p.rot, p.isla ? 0 : FRENTE), PASILLO - 0.2)));
+      const c = v.islas ? enIsla() || enPared() : enPared() || enIsla();
       if (c) puestos.push({ ...c, q, h, e }); else afuera.push(q);
     }
     return afuera;
   }
-
-  // reparto entre lugares: primero los que piden uno; el resto, en proporción al perímetro de cada lugar
   const perim = espacios.map(e => e.poly.reduce((s, q, i) => s + Math.hypot(q[0] - e.poly[(i + 1) % e.poly.length][0], q[1] - e.poly[(i + 1) % e.poly.length][1]), 0));
-  const asign = espacios.map(() => []), sueltos = [];
-  for (const q of equipos) { const i = q.lugar ? espacios.findIndex(e => e.nombre.toLowerCase().includes(q.lugar.toLowerCase())) : -1; if (i >= 0) asign[i].push(q); else sueltos.push(q); }
-  for (const q of sueltos) { let m = 0; espacios.forEach((_, i) => { if ((asign[i].length + 1) / perim[i] < (asign[m].length + 1) / perim[m]) m = i; }); asign[m].push(q); }
+  const SEPS = [4, 3, 2.2, 1.6, 1.1, 0.7, 0.35];
 
-  const todos = []; let resto = [];
-  espacios.forEach((e, i) => {
-    if (!asign[i].length) return;
-    // la mayor separación con la que entran todos: así quedan repartidos parejo y no amontonados
-    let puestos = null;
-    for (const sep of [4, 3, 2.2, 1.6, 1.1, 0.7, 0.35]) { const p = []; if (!ubicar(e, asign[i], sep, p).length) { puestos = p; break; } }
-    if (!puestos) { puestos = []; resto.push(...ubicar(e, asign[i], 0.35, puestos)); }
-    e._puestos = puestos; todos.push(...puestos);
-  });
-  // los que no entraron en su lugar prueban en los demás
-  for (const e of espacios) { if (!resto.length) break; e._puestos ||= []; const antes = e._puestos.length; resto = ubicar(e, resto, 0.35, e._puestos); todos.push(...e._puestos.slice(antes)); }
-
-  const items = todos.map(s => {
+  /** Arma una distribución completa según la variante. */
+  function armar(v) {
+    // reparto entre lugares: primero los que piden uno; el resto, en proporción al perímetro (o al área) de cada lugar
+    const peso = espacios.map((e, i) => v.reparto === 'area' ? e.area : perim[i]);
+    const asign = espacios.map(() => []), sueltos = [];
+    for (const q of equipos) { const i = q.lugar ? espacios.findIndex(e => e.nombre.toLowerCase().includes(q.lugar.toLowerCase())) : -1; if (i >= 0) asign[i].push(q); else sueltos.push(q); }
+    for (const q of sueltos) { let m = 0; espacios.forEach((_, i) => { if ((asign[i].length + 1) / peso[i] < (asign[m].length + 1) / peso[m]) m = i; }); asign[m].push(q); }
+    const porEsp = espacios.map(() => []); let resto = [];
+    espacios.forEach((e, i) => {
+      if (!asign[i].length) return;
+      // la mayor separación con la que entran todos (o un escalón menos, si la variante es compacta)
+      let k = SEPS.findIndex(sep => !ubicar(e, asign[i], sep, [], v).length);
+      if (k < 0) k = SEPS.length - 1; else if (v.compacto) k = Math.min(SEPS.length - 1, k + 1);
+      resto.push(...ubicar(e, asign[i], SEPS[k], porEsp[i], v));
+    });
+    espacios.forEach((e, i) => { if (resto.length) resto = ubicar(e, resto, 0.35, porEsp[i], v); });      // los que no entraron prueban en los demás
+    return { puestos: porEsp.flat(), resto };
+  }
+  const aItems = puestos => puestos.map(s => {
     const [fx, fy] = FR[s.rot], corr = s.h.M.atras + tipo.d / 2 - s.h.d / 2;          // el mueble dentro de su huella
     const it = itemDesdeTipo(tipo, Math.round((s.cx + fx * corr) * 100) / 100, Math.round((s.cy + fy * corr) * 100) / 100, nivel.id);
     return Object.assign(it, { rot: s.rot, etiqueta: s.q.nombre, estudiantes: s.q.estudiantes, equipo: true, w: s.h.ancho, mesas: s.h.mesas });
   });
-  const islas = todos.filter(s => s.isla).length;
-  const porLugar = espacios.map(e => `${e.nombre}: ${(e._puestos || []).length}`).join(' · ');
-  espacios.forEach(e => { delete e._puestos; });
-  return { items, sinLugar: resto,
-    mesas: todos.reduce((a, s) => a + s.h.mesas, 0),
-    resumen: `Cada puesto reserva el lugar de su mesa y de sus estudiantes. Quedaron contra las paredes, lo más separados posible${islas ? `, y ${islas} en el centro porque no había más pared` : ', con el centro libre para circular'}. ${porLugar}.` };
+  const cerrar = (d, texto, extra = {}) => ({ items: aItems(d.puestos), sinLugar: d.resto, mesas: d.puestos.reduce((a, s) => a + s.h.mesas, 0), ...extra,
+    resumen: `${texto} ${espacios.map(e => `${e.nombre}: ${d.puestos.filter(s => s.e === e).length}`).join(' · ')}.` });
+
+  const basica = armar({ orden: 'grandes', giro: 0 });
+  if (!simular) return cerrar(basica, 'Los puestos quedaron contra las paredes, lo más separados posible. No pude simular la circulación porque falta marcar la Entrada: marcala y volvé a distribuir para que elija la mejor ubicación.');
+
+  // ---- se simula cada alternativa y se elige la que mejor circula ----
+  const VARIANTES = [
+    { orden: 'grandes', giro: 0 }, { orden: 'grandes', giro: 1 }, { orden: 'grandes', giro: 2 }, { orden: 'grandes', giro: 3 },
+    { orden: 'chicos', giro: 0 }, { orden: 'chicos', giro: 2 }, { orden: 'lista', giro: 1 }, { orden: 'grandes', giro: 0, compacto: true },
+    { orden: 'grandes', giro: 0, islas: true }, { orden: 'grandes', giro: 2, islas: true }, { orden: 'grandes', giro: 0, reparto: 'area' }, { orden: 'chicos', giro: 1, reparto: 'area' },
+  ];
+  const nota = (d, r) => r.pctAglom + r.densMax * 2 + r.tiempoProm / 200 + d.resto.length * 60;
+  const vistas = new Set(), probadas = [];
+  for (const v of VARIANTES) {
+    const d = armar(v), clave = d.puestos.map(s => [s.q.nombre, s.cx.toFixed(1), s.cy.toFixed(1), s.rot]).sort().join('|');
+    if (vistas.has(clave)) continue; vistas.add(clave);
+    await progreso(`Simulando la distribución ${probadas.length + 1}…`);
+    const ev = simular(aItems(d.puestos)); probadas.push({ d, ...ev, n: nota(d, ev.r) });
+  }
+  let mejor = probadas.reduce((a, b) => b.n < a.n ? b : a);
+  const primera = probadas[0], peor = probadas.reduce((a, b) => b.n > a.n ? b : a);
+
+  // ---- mejoras: si la gente se junta frente a un puesto, se prueba llevarlo a otros sitios ----
+  let movidos = 0, ensayos = probadas.length;
+  for (let ronda = 0; ronda < 3 && mejor.diag?.parada; ronda++) {
+    const i = mejor.d.puestos.findIndex(s => s.q.nombre === mejor.diag.parada); if (i < 0) break;
+    const s0 = mejor.d.puestos[i], otros = mejor.d.puestos.filter((_, k) => k !== i);
+    const libres = espacios.flatMap(e => { const S = sitios(e, s0.h.w, s0.h.d); return [...S.per.filter(c => !otros.some(p => seMolestan(c, p, 0.5))), ...S.isl.filter(c => !otros.some(p => choca(c.r, conFrente(p.r, p.rot, p.isla ? 0 : FRENTE), PASILLO - 0.2)))].map(c => ({ ...c, q: s0.q, h: s0.h, e })); })
+      .filter(c => Math.hypot(c.cx - s0.cx, c.cy - s0.cy) > 1.5);
+    if (!libres.length) break;
+    const muestra = Array.from({ length: Math.min(5, libres.length) }, (_, k) => libres[Math.floor((k + 0.5) * libres.length / Math.min(5, libres.length))]);
+    let gano = null;
+    for (const c of muestra) {
+      await progreso(`Mejorando: probando otro sitio para «${s0.q.nombre}»…`);
+      const d = { puestos: [...otros, c], resto: mejor.d.resto }, ev = simular(aItems(d.puestos)), n = nota(d, ev.r); ensayos++;
+      if (n < (gano ? gano.n : mejor.n) - 0.3) gano = { d, ...ev, n };
+    }
+    if (!gano) break;
+    mejor = gano; movidos++;
+  }
+  const c = v => v.toFixed(1).replace('.', ',');
+  return cerrar(mejor.d, `Simulé ${ensayos} distribuciones y dejé la que mejor circula: ${c(mejor.r.pctAglom)} % del tiempo en aglomeración y densidad máxima ${c(mejor.r.densMax)} pers./m²` +
+    (peor.n - mejor.n > 0.5 ? ` (la peor daba ${c(peor.r.pctAglom)} % y ${c(peor.r.densMax)}).` : ' (todas daban parecido).') +
+    (movidos ? ` Después cambié de sitio ${movidos} puesto${movidos > 1 ? 's' : ''} donde se juntaba la gente.` : '') +
+    (mejor.d.puestos.some(s => s.isla) ? ' Algunos quedaron en el centro, en islas.' : ''), { ensayos, r: mejor.r });
 }
