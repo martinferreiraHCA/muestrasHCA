@@ -106,7 +106,7 @@ export function generarPDF(proy, niveles, op) {
       for (const [ex, ey] of posEstudiantes(it)) doc.circle(X(ex), Y(ey), Math.max(0.25, 0.19 * s), 'FD');
       if (!it.etiqueta) continue;
       const esp = elegidos.find(e => puntoEnPoly(it.x, it.y, e.poly)) || todos.filter(e => puntoEnPoly(it.x, it.y, e.poly)).sort((a, b) => a.area - b.area)[0];
-      const fila = { ref: '', etiqueta: it.etiqueta, elemento: it.nombre, medidas: `${m2(it.w)} × ${m2(it.d)} m`, est: it.estudiantes || '', espacio: esp?.nombre || '', nivel: nivel.nombre };
+      const fila = { ref: '', etiqueta: it.etiqueta, elemento: it.nombre, medidas: `${m2(it.w)} × ${m2(it.d)} m`, est: it.estudiantes || '', grupo: it.grupo || '', integrantes: it.integrantes || '', espacio: esp?.nombre || '', nivel: nivel.nombre };
       filas.push(fila);
       let t = ajustarTexto(it.etiqueta, it.w * s, it.d * s, it.modelo === 'texto' ? 12 : 4.5);
       if (t.tam < 1.25) {          // no entra: se usa un número de referencia
@@ -207,5 +207,8 @@ function listado(doc, proy, niveles, filas, { PW, PH, M, pagina, encabezado }) {
     c.cant++; cuenta.set(k, c);
   }
   tabla('Resumen de elementos', [{ t: 'Nivel', k: 'nivel', x: 0 }, { t: 'Elemento', k: 'elemento', x: W * 0.22 }, { t: 'Medidas (ancho × fondo × alto)', k: 'medidas', x: W * 0.55 }, { t: 'Cantidad', k: 'cant', x: W * 0.88 }], [...cuenta.values()]);
-  tabla('Ubicaciones con nombre', [{ t: 'Ref.', k: 'ref', x: 0 }, { t: 'Nombre', k: 'etiqueta', x: W * 0.07 }, { t: 'Elemento', k: 'elemento', x: W * 0.42 }, { t: 'Medidas', k: 'medidas', x: W * 0.56 }, { t: 'Estud.', k: 'est', x: W * 0.67 }, { t: 'Espacio', k: 'espacio', x: W * 0.73 }, { t: 'Nivel', k: 'nivel', x: W * 0.89 }], filas);
+  const conGente = filas.some(f => f.integrantes);
+  tabla('Ubicaciones con nombre', conGente
+    ? [{ t: 'Ref.', k: 'ref', x: 0 }, { t: 'Equipo', k: 'etiqueta', x: W * 0.05 }, { t: 'Grupo', k: 'grupo', x: W * 0.2 }, { t: 'Integrantes', k: 'integrantes', x: W * 0.27 }, { t: 'Espacio', k: 'espacio', x: W * 0.8 }]
+    : [{ t: 'Ref.', k: 'ref', x: 0 }, { t: 'Nombre', k: 'etiqueta', x: W * 0.07 }, { t: 'Elemento', k: 'elemento', x: W * 0.42 }, { t: 'Medidas', k: 'medidas', x: W * 0.56 }, { t: 'Estud.', k: 'est', x: W * 0.67 }, { t: 'Espacio', k: 'espacio', x: W * 0.73 }, { t: 'Nivel', k: 'nivel', x: W * 0.89 }], filas);
 }

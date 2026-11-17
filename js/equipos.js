@@ -22,17 +22,22 @@ export function leerEquipos(texto, porDefecto = 4) {
   const lineas = String(texto || '').split(/\r?\n/);
   const esFila = c => c.length >= 3 && /^\d+\s*\.?\s*[ºo°]?\s*\d*$/i.test(c[0].trim());
   if (lineas.some(l => esFila(l.split('\t')))) return leerPlanilla(lineas, esFila);
-  const eq = [];
+  const eq = []; let grupo = '';
   for (let linea of lineas) {
-    linea = linea.trim(); if (!linea || linea.startsWith('#')) continue;
+    linea = linea.trim(); if (!linea) continue;
+    if (linea.startsWith('#')) { const g = linea.replace(/^#+\s*/, ''); if (g.length <= 24) grupo = g; continue; }      // «# 8.º1» nombra el grupo de los renglones que siguen
     let partes = linea.split(/\s*[;|\t]\s*/);
     if (partes.length === 1 && /,\s*\d+\s*(,|$)/.test(linea)) partes = linea.split(/\s*,\s*/);
-    let [nombre, n, ...resto] = partes, estudiantes = parseInt(n);
+    let [nombre, n, ...resto] = partes, estudiantes = parseInt(n), integrantes = '';
     if (partes.length === 1) { const m = linea.match(/^(.*?)\s*[(x×]\s*(\d{1,3})\s*\)?$/i); if (m) { nombre = m[1]; estudiantes = +m[2]; } }
+    // el segundo dato puede ser la lista de integrantes (con comas o «y»): se cuentan solos
+    const lista = t => t.split(/,|\s+y\s+|\s+e\s+/i).map(x => x.trim()).filter(Boolean);
+    if (n && !/^\d+$/.test(n.trim()) && (/,|\s+y\s+/.test(n) || partes.length >= 3)) { integrantes = lista(n).join(', '); estudiantes = lista(n).length; }
+    else if (resto.length && /^\d+$/.test((n || '').trim()) && /,|\s+y\s+/.test(resto[0]) && !/pared|enchufe|libre|flexible/i.test(resto[0])) { integrantes = lista(resto.shift()).join(', '); }
     if (!isFinite(estudiantes)) { if (n && !resto.length) resto = [n]; estudiantes = porDefecto; }
     nombre = nombre.trim(); if (!nombre) continue;
     const pedido = resto.join(' ').trim();
-    eq.push({ nombre, estudiantes: Math.max(0, Math.min(40, estudiantes)), ...pedidos(pedido, pedido) });
+    eq.push({ nombre, estudiantes: Math.max(0, Math.min(40, estudiantes)), ...pedidos(pedido, pedido), ...(grupo && { grupo }), ...(integrantes && { integrantes }) });
   }
   return eq;
 }

@@ -688,7 +688,7 @@ function pintarPanel() {
   const comun = k => sel.every(i => i[k] === u[k]) ? u[k] : '';
   el.innerHTML = `
     <section><h2>${varios ? sel.length + ' elementos' : esc(u.nombre)}</h2>
-      ${!varios && u.grupo ? `<p class="ayuda"><b>${esc(u.grupo)}</b> · ${esc(u.integrantes || '')}${u.necesidad ? `<br><b>Pide:</b> ${esc(u.necesidad)}` : ''}</p>` : ''}
+      ${!varios && (u.grupo || u.integrantes) ? `<p class="ayuda">${u.grupo ? `<b>${esc(u.grupo)}</b> · ` : ''}${esc(u.integrantes || '')}${u.necesidad ? `<br><b>Pide:</b> ${esc(u.necesidad)}` : ''}</p>` : ''}
       <label>Nombre en el plano<input id="pEtiqueta" type="text" value="${esc(comun('etiqueta'))}" placeholder="${varios ? 'Mismo texto para todos' : 'Ej.: Stand 3 · 5.º B'}"></label>
       <div class="fila3">
         <label>Ancho (m)<input id="pW" type="number" min="0.05" max="60" step="0.05" value="${comun('w')}"></label>
