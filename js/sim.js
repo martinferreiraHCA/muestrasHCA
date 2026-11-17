@@ -72,10 +72,20 @@ export class Simulacion {
     const esp = items.filter(i => i.tipo === 'espera').map(it => fuentes(it, 0)).flat();
     this.fEspera = esp.length ? esp : this.entradas.flat(); this.hayEspera = esp.length > 0;
     this.paradas = [];
+    const cruzaMuro = (p, q) => {
+      for (const S of [nivel.muros, nivel.barreras]) for (let i = 0; i < S.length; i += 4) {
+        const ax = S[i], ay = S[i + 1], bx = S[i + 2], by = S[i + 3];
+        if (Math.max(ax, bx) < Math.min(p[0], q[0]) || Math.min(ax, bx) > Math.max(p[0], q[0]) || Math.max(ay, by) < Math.min(p[1], q[1]) || Math.min(ay, by) > Math.max(p[1], q[1])) continue;
+        const d1 = (bx - ax) * (p[1] - ay) - (by - ay) * (p[0] - ax), d2 = (bx - ax) * (q[1] - ay) - (by - ay) * (q[0] - ax);
+        const d3 = (q[0] - p[0]) * (ay - p[1]) - (q[1] - p[1]) * (ax - p[0]), d4 = (q[0] - p[0]) * (by - p[1]) - (q[1] - p[1]) * (bx - p[0]);
+        if (d1 * d2 < 0 && d3 * d4 < 0) return true;
+      }
+      return false;
+    };
     for (const it of items.filter(esParada)) {
       const f = it.modelo === 'zona' ? fuentes(it, 0)
         : it.modelo === 'stand' ? fuentes(it, 0.9, (lx, ly) => Math.abs(lx) < it.w / 2 - 0.15 && ly > -it.d / 2 + 0.25)
-        : fuentes(it, 0.75);
+        : fuentes(it, 0.75).filter(i => !cruzaMuro(this.#centro(i), [it.x, it.y]));       // no desde el otro lado de una pared
       if (f.length) this.paradas.push({ it, nombre: it.etiqueta || it.nombre, fuentes: f, ocup: 0, visitas: 0 });
     }
     this.falta = !this.entradas.length ? 'Falta marcar al menos una Entrada (está en la lista de elementos).'
@@ -251,7 +261,10 @@ export class Simulacion {
     for (const a of this.agentes) { const k = clave(a.x, a.y); (cubos.get(k) || cubos.set(k, []).get(k)).push(a); }
     for (const a of this.fijos) { const k = clave(a.x, a.y); (cubos.get(k) || cubos.set(k, []).get(k)).push(a); }
     const quedan = [], tope = P.tiempoVisita * 60;
-    if (this.agentes.length > this.maxAdentro) this.maxAdentro = this.agentes.length;
+    if (this.agentes.length > this.maxAdentro) {          // se guarda una foto del momento de mayor carga
+      this.maxAdentro = this.agentes.length;
+      this.pico = { t: this.t, ag: this.agentes.map(a => ({ x: a.x, y: a.y, dens: a.dens, estado: a.estado })) };
+    }
     for (const a of this.agentes) {
       // se le acabó el tiempo de visita: deja lo que falta y va a la salida
       if (tope && a.estado !== 'sale' && a.estado !== 'espera' && a.t - a.tEsp > tope) { a.faltan = 0; this.apurados++; this.#elegir(a); }
@@ -341,6 +354,7 @@ export class Simulacion {
       esperaProm: med(this.esperas), paradoProm: med(this.tParados), tandas: this.nTandas, esperando: this.agentes.filter(a => a.estado === 'espera').length,
       seguido: sg && { t: sg.t, fin: sg.fin, espera: sg.tEsp, parado: sg.tPar, camino: sg.camino, vistas: sg.vistas.size, estado: sg.estado,
         en: sg.destino >= 0 ? this.paradas[sg.destino].nombre : null, hijo: sg.hijo >= 0 ? this.paradas[sg.hijo].nombre : null },
+      tPico: this.pico ? this.pico.t : 0, estudiantes: this.fijos.length,
       paradas: this.paradas.length, terminada: this.terminada, maxAdentro: this.maxAdentro, apurados: this.apurados, tUltimo: this.tUltimo,
       critico: pi >= 0 && peor > 5 ? [this.x0 + (pi % this.hw + 0.5) * CH, this.y0 + (Math.floor(pi / this.hw) + 0.5) * CH] : null,
     };
@@ -381,11 +395,12 @@ export class Simulacion {
         ctx.fillText(n + 1, it.x, it.y - it.d / 2 + r * 0.06);
       });
     }
-    const r = Math.max(0.2, 2.5 * px);
-    for (const a of this.agentes) {
+    // personas a tamaño real (unos 45 cm); al terminar se muestra la foto del momento de mayor carga
+    const r = Math.max(0.22, 3.2 * px), lista = this.terminada && this.pico ? this.pico.ag : this.agentes;
+    for (const a of lista) {
       ctx.beginPath(); ctx.arc(a.x, a.y, r, 0, 7);
-      ctx.fillStyle = a.estado === 'espera' ? '#7048a8' : a.dens >= AGLOM ? '#d62828' : a.estado === 'parado' ? '#f08c00' : a.estado === 'sale' ? '#6c757d' : '#1971c2';
-      ctx.fill(); ctx.lineWidth = px; ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.stroke();
+      ctx.fillStyle = a.estado === 'espera' ? '#7048a8' : a.dens >= AGLOM ? '#d62828' : a.estado === 'parado' ? '#2f9e44' : a.estado === 'sale' ? '#6c757d' : '#1971c2';
+      ctx.fill(); ctx.lineWidth = Math.min(0.04, px); ctx.strokeStyle = 'rgba(20,28,40,.75)'; ctx.stroke();
     }
     const sg = this.seguido;
     if (sg && sg.rastro.length > 1) {          // la persona que se está siguiendo: su recorrido y un marcador grande

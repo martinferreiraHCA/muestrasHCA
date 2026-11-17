@@ -340,7 +340,7 @@ function tiempoSolo() {
   return soloCache.r;
 }
 function simCrear() {
-  simPausar(); sim = nivel ? new Simulacion(nivel, proyecto(), parSim()) : null; simComp = null;
+  simPausar(); if (vistaSim) ui.pista(''); sim = nivel ? new Simulacion(nivel, proyecto(), parSim()) : null; simComp = null;
   if (vistaSim) { pintarPanel(); P.pedir(); }
 }
 function simPausar() { simCorre = false; cancelAnimationFrame(simRaf); const b = $('btnSimPlay'); if (b) b.textContent = '▶ Simular'; }
@@ -356,7 +356,7 @@ function simAlternar() {
     for (let i = 0; i < pasos && !sim.terminada; i++) sim.paso();
     P.pedir();
     if (ahora - tPanelSim > 400) { tPanelSim = ahora; pintarEstadoSim(); }
-    if (sim.terminada) { simPausar(); pintarEstadoSim(); aviso('Simulación terminada.'); return; }
+    if (sim.terminada) { simPausar(); pintarEstadoSim(); finSim(); aviso('Simulación terminada.'); return; }
     simRaf = requestAnimationFrame(cuadro);
   };
   simRaf = requestAnimationFrame(cuadro);
@@ -372,7 +372,9 @@ function pintarEstadoSim() {
     <tr><td>${hay ? 'Hora simulada' : 'Tiempo simulado'}</td><td>${reloj(r.t)}</td></tr>
     <tr><td>Recorriendo ahora</td><td>${r.adentro - r.esperando}</td></tr>
     ${q.tandas ? `<tr><td>Esperando su tanda</td><td>${r.esperando} <small>(${r.tandas} tanda${r.tandas === 1 ? '' : 's'} adentro)</small></td></tr>` : ''}
-    <tr><td>Máximo a la vez</td><td>${r.maxAdentro}</td></tr>
+    <tr><td>Máximo a la vez</td><td>${r.maxAdentro} padres${r.estudiantes ? ` + ${r.estudiantes} estudiantes` : ''}</td></tr>
+    ${r.maxAdentro ? `<tr><td>Momento de mayor carga</td><td>${hay ? reloj(r.tPico) : mmss(r.tPico)}</td></tr>
+    <tr><td>Lugar por persona en ese momento</td><td>${(() => { const m = lugares().reduce((a, x) => a + x.area, 0) / (r.maxAdentro + r.estudiantes); return m ? coma(m) + ' m²' : '—'; })()}</td></tr>` : ''}
     <tr><td>Ya salieron</td><td>${r.terminaron} de ${r.total}</td></tr>
     <tr><td>Densidad máxima</td><td>${coma(r.densMax)} pers./m² <small>(${nivelDens(r.densMax)})</small></td></tr>
     <tr><td>Tiempo en aglomeración</td><td>${coma(r.pctAglom)} %</td></tr>
@@ -461,12 +463,13 @@ function pintarPanelSim() {
   pintarEstadoSim();
 }
 /** Calcula toda la simulación de una vez, sin animarla. */
+const finSim = () => { const r = sim.resumen(); ui.pista(`Se muestra el momento de mayor carga (${proyecto().horaInicio ? reloj(r.tPico) : 'minuto ' + mmss(r.tPico)}): ${r.maxAdentro} padres a la vez. Verde: en un stand · azul: caminando · rojo: apretados · violeta: esperando · naranja: estudiantes.`); };
 async function simYa() {
   simPausar(); simCrear();
   if (sim.falta) return aviso(sim.falta);
   aviso('Calculando…'); await new Promise(f => setTimeout(f, 30));
   const t0 = performance.now(); sim.completar(4 * 3600);
-  pintarEstadoSim(); P.pedir(); aviso(`Listo en ${((performance.now() - t0) / 1000).toFixed(1).replace('.', ',')} s.`);
+  pintarEstadoSim(); P.pedir(); finSim(); aviso(`Listo en ${((performance.now() - t0) / 1000).toFixed(1).replace('.', ',')} s.`);
 }
 async function simComparar() {
   simPausar();
@@ -482,7 +485,7 @@ async function simComparar() {
   proyecto().sim = { ...(proyecto().sim || {}), ...m.cambios };
   const comp = simComp; avisar('sim'); simComp = comp;
   sim = new Simulacion(nivel, proyecto(), parSim()); sim.completar(4 * 3600);
-  pintarPanel(); P.pedir();
+  pintarPanel(); P.pedir(); finSim();
 }
 
 // ---------- paneles ----------
