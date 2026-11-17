@@ -402,7 +402,7 @@ function alSoltar(e) {
   punteros.delete(e.pointerId);
   const a = accion; accion = null;
   if (!a || a.tipo === 'pellizco') return;
-  if (a.tipo === 'arrastrar' || a.tipo === 'girar') { if (a.movido) { avisar('items'); if (a.tipo === 'girar') ui.pista(''); } return; }
+  if (a.tipo === 'arrastrar' || a.tipo === 'girar') { if (a.movido) { ui.alMover?.(a.tipo === 'girar' ? [a.it] : a.origen.map(q => q.i)); avisar('items'); if (a.tipo === 'girar') ui.pista(''); } return; }
   if (a.tipo === 'vert' || a.tipo === 'moverEsp') { if (a.movido) avisar('espacios'); return; }
   if (a.tipo === 'rect') {
     const [x0, y0] = a.a, [x1, y1] = a.b; pedir();

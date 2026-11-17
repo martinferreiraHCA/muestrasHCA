@@ -292,10 +292,29 @@ function pintarResumenSala() {
 }
 /** Arma un lugar con su configuración y la guarda. No avisa ni marca: eso lo hace quien llama. */
 function armarUna(e, op) {
-  const p = proyecto(), r = armarSala(nivel, p, e, id => E.catalogo().find(t => t.id === id), op);
+  const p = proyecto();
+  // un escenario que el usuario movió o giró dentro del lugar manda sobre el frente elegido
+  const esc = p.items.find(i => (i.tipo === 'tarima' || i.tipo === 'escenario') && i.fijo && i.nivel === nivel.id && puntoEnPoligono(i.x, i.y, e.poly));
+  op = { ...op, escenarioFijo: esc ? esc.id : null };
+  const r = armarSala(nivel, p, e, id => E.catalogo().find(t => t.id === id), op);
   p.salas = { ...(p.salas || {}), [e.id]: { ...op, capacidad: r.capacidad, frenteUsado: r.frente } };
-  p.items = [...p.items.filter(i => !(i.auto === 'sala' && i.nivel === nivel.id && puntoEnPoligono(i.x, i.y, e.poly))), ...r.items];
+  p.items = [...p.items.filter(i => i === esc || !(i.auto === 'sala' && i.nivel === nivel.id && puntoEnPoligono(i.x, i.y, e.poly))), ...r.items];
   return r;
+}
+/** Si se movió o giró un escenario dentro de un lugar armado, se reacomodan las sillas delante de él. */
+function seguirEscenario(movidos) {
+  const p = proyecto(); let n = 0;
+  for (const it of movidos) {
+    if (it.tipo !== 'tarima' && it.tipo !== 'escenario') continue;
+    const e = lugares().find(x => puntoEnPoligono(it.x, it.y, x.poly)), c = e && p.salas?.[e.id];
+    if (!c) continue;                                  // solo en lugares que se armaron con el sistema
+    p.items.forEach(i => { if ((i.tipo === 'tarima' || i.tipo === 'escenario') && i.fijo && i !== it && puntoEnPoligono(i.x, i.y, e.poly)) delete i.fijo; });
+    it.fijo = true;
+    const r = armarUna(e, c); n += r.lugares;
+    $('saResultado').innerHTML = `<b>Reacomodé ${r.lugares} lugares</b> en ${esc(e.nombre)} delante del escenario, hacia donde mira${r.lugares < r.pedidas ? ` <span class="alerta">(con el escenario ahí entran ${r.lugares} de ${r.pedidas})</span>` : ''}. Si lo borrás, el frente vuelve a elegirse solo.`;
+  }
+  if (n) aviso(`Sillas reacomodadas según el escenario: ${n} lugares.`);
+  return n;
 }
 function armarSalaAhora() {
   const e = lugares().find(x => x.id === $('saLugar').value);
@@ -303,7 +322,7 @@ function armarSalaAhora() {
   const op = { forma: $('saForma').value, personas: num($('saPersonas').value, 1, 1500, 60) | 0, frente: $('saFrente').value, escenario: $('saEscenario').checked, llenar: $('saLlenar').checked };
   marcar(); const r = armarUna(e, op);
   ui.seleccion.clear(); avisar('items'); P.centrarEn(e.poly);
-  const extra = `${r.automatico ? ` Elegí el frente hacia ${NOMBRE_FRENTE[r.frente]}, que es el que mejor rinde.` : ''}${op.escenario && op.forma !== 'ronda' && !r.conEscenario ? ' No encontré lugar para el escenario contra esa pared.' : ''}${r.pasillos ? ` Respeté ${r.pasillos} pasillo${r.pasillos > 1 ? 's' : ''} o zona${r.pasillos > 1 ? 's' : ''} libre${r.pasillos > 1 ? 's' : ''}.` : ''}`;
+  const extra = `${r.fijo ? ' Lo armé delante del escenario que ubicaste, hacia donde mira.' : ''}${r.automatico ? ` Elegí el frente hacia ${NOMBRE_FRENTE[r.frente]}, que es el que mejor rinde.` : ''}${op.escenario && op.forma !== 'ronda' && !r.conEscenario ? ' No encontré lugar para el escenario contra esa pared.' : ''}${r.pasillos ? ` Respeté ${r.pasillos} pasillo${r.pasillos > 1 ? 's' : ''} o zona${r.pasillos > 1 ? 's' : ''} libre${r.pasillos > 1 ? 's' : ''}.` : ''}`;
   $('saResultado').innerHTML = r.lugares >= r.pedidas
     ? `<b>${r.lugares} lugares armados</b> en ${esc(e.nombre)}${op.llenar ? ', el máximo que encontré' : `; con esta forma entran hasta ${r.capacidad}`}.${extra}`
     : `<b>Entraron ${r.lugares} de ${r.pedidas}.</b> <span class="alerta">En ${esc(e.nombre)} no hay lugar para más con esta forma.</span>${extra}`;
@@ -801,7 +820,7 @@ function girarSel(g) {
     const cx = sel.reduce((a, i) => a + i.x, 0) / sel.length, cy = sel.reduce((a, i) => a + i.y, 0) / sel.length, a = g * Math.PI / 180;
     sel.forEach(i => { const dx = i.x - cx, dy = i.y - cy; i.x = cx + dx * Math.cos(a) - dy * Math.sin(a); i.y = cy + dx * Math.sin(a) + dy * Math.cos(a); });
   }
-  sel.forEach(i => { i.rot = (((i.rot + g) % 360) + 360) % 360; }); avisar('items');
+  sel.forEach(i => { i.rot = (((i.rot + g) % 360) + 360) % 360; }); seguirEscenario(sel); avisar('items');
 }
 function grilla(cols, filas, sx, sy) {
   const sel = P.seleccionados(); if (!sel.length || cols * filas < 2) return;
@@ -1039,7 +1058,7 @@ function conectar() {
     else if (k.startsWith('arrow') && sel.length) {
       e.preventDefault(); const d = e.shiftKey ? 0.5 : 0.05; marcar();
       const [dx, dy] = { arrowleft: [-d, 0], arrowright: [d, 0], arrowup: [0, -d], arrowdown: [0, d] }[k];
-      sel.forEach(i => { i.x = Math.round((i.x + dx) * 100) / 100; i.y = Math.round((i.y + dy) * 100) / 100; }); avisar('items');
+      sel.forEach(i => { i.x = Math.round((i.x + dx) * 100) / 100; i.y = Math.round((i.y + dy) * 100) / 100; }); seguirEscenario(sel); avisar('items');
     }
     else if (k === 'escape') { if (!P.cancelar()) { if (ui.herramienta !== 'mover') herr('mover'); else { ui.seleccion.clear(); pintarPanel(); P.pedir(); } } }
     else if (k === 'enter') P.cerrarTrazo();
@@ -1053,6 +1072,7 @@ function conectar() {
 let tIso;
 async function arrancar() {
   E.cargar(); iniciarAyuda();
+  ui.alMover = seguirEscenario;
   ui.alSeleccionar = pintarPanel; ui.pedirNombre = pedirNombre; ui.pista = t => { $('pista').textContent = t || ''; };
   P.iniciar($('plano'));
   conectar();

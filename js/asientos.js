@@ -19,19 +19,21 @@ const PASO = 0.55, FILA = 0.95, PASILLO = 1.2;        // separación entre silla
  * Devuelve { items, lugares, pedidas } sin tocar la muestra. Los elementos llevan `auto: 'sala'`.
  */
 export function armarSala(nivel, proy, esp, cat, op = {}) {
-  const base = { ...proy, items: proy.items.filter(i => i.nivel === nivel.id && i.auto !== 'sala') };
+  // Si el usuario movió el escenario, manda el escenario: se arma delante de él, hacia donde mira.
+  const fijo = op.escenarioFijo ? proy.items.find(i => i.id === op.escenarioFijo) : null;
+  const base = { ...proy, items: proy.items.filter(i => i.nivel === nivel.id && (i.auto !== 'sala' || i === fijo)) };
   const xs = esp.poly.map(q => q[0]), ys = esp.poly.map(q => q[1]);
   const G = new Simulacion(nivel, base, {}, 1, { x0: Math.min(...xs) - 2, y0: Math.min(...ys) - 2, x1: Math.max(...xs) + 2, y1: Math.max(...ys) + 2 });
   const zonas = zonasLibres(nivel, base.items).map(([x, y, r]) => [x, y, r - 0.2]);          // puertas, entradas y salidas quedan despejadas
   const pasillos = base.items.filter(i => i.tipo === 'pasillo' && puntoEnPoly(i.x, i.y, esp.poly));
-  const ctx = { G, zonas, pasillos, base };
+  const ctx = { G, zonas, pasillos, base, fijo };
   // Con «llenar», se prueban varios corrimientos de las filas y se deja el que más lugares da.
   const fases = op.llenar && ['auditorio', 'aula'].includes(op.forma) ? [0, 0.14, 0.28, 0.41].flatMap(du => [0, 0.32, 0.64].map(ds => [du, ds])) : [[0, 0]];
   const mejorDe = (frente, personas) => { let m = null; for (const [du, ds] of fases) { const r = construir(nivel, esp, cat, { ...op, frente, personas }, ctx, du, ds); if (!m || r.lugares > m.lugares) m = r; } return m; };
   // Frente automático: se prueban los cuatro lados. Gana el que da más lugares; a igualdad, el que deja a la
   // gente más cerca del escenario y tiene el escenario bien ubicado.
   const pedidas = op.llenar ? 5000 : op.personas;
-  const candidatos = (op.frente === 'auto' || !FRENTES[op.frente] ? Object.keys(FRENTES) : [op.frente]).map(fr => {
+  const candidatos = (fijo ? ['escenario'] : op.frente === 'auto' || !FRENTES[op.frente] ? Object.keys(FRENTES) : [op.frente]).map(fr => {
     const r = mejorDe(fr, pedidas), sillas = r.items.filter(i => i.tipo === 'silla');
     const lejos = sillas.length ? sillas.reduce((a, i) => a + Math.hypot(i.x - r.foco[0], i.y - r.foco[1]), 0) / sillas.length : 99;
     const cap = op.llenar ? r.lugares : mejorDe(fr, 5000).lugares;             // cuánto entraría como máximo con ese frente
@@ -39,18 +41,20 @@ export function armarSala(nivel, proy, esp, cat, op = {}) {
   });
   const mejor = candidatos.reduce((a, b) => b.nota > a.nota ? b : a);
   const capacidad = mejor.cap;
-  return { ...mejor, pedidas: op.llenar ? mejor.lugares : op.personas, pasillos: pasillos.length, capacidad, automatico: candidatos.length > 1 };
+  return { ...mejor, pedidas: op.llenar ? mejor.lugares : op.personas, pasillos: pasillos.length, capacidad, automatico: candidatos.length > 1, fijo: !!fijo };
 }
 
-function construir(nivel, esp, cat, { forma = 'auditorio', personas = 50, frente = 'arriba', escenario = false }, { G, zonas, pasillos, base }, du, ds) {
-  const f = FRENTES[frente] || FRENTES.arriba, u = [-f[1], f[0]];
+function construir(nivel, esp, cat, { forma = 'auditorio', personas = 50, frente = 'arriba', escenario = false }, { G, zonas, pasillos, base, fijo }, du, ds) {
+  // f apunta del público hacia el escenario. Con escenario fijo sale de su giro (su frente es su lado «de abajo»).
+  const rf = fijo ? fijo.rot * Math.PI / 180 : 0, f = fijo ? [Math.sin(rf), -Math.cos(rf)] : FRENTES[frente] || FRENTES.arriba, u = [-f[1], f[0]];
   const libre = (x, y) => {
     if (zonas.some(z => Math.hypot(z[0] - x, z[1] - y) < z[2]) || enPasillo(base.items, x, y, 0.05)) return false;
     const gx = Math.floor((x - G.x0) / 0.2), gy = Math.floor((y - G.y0) / 0.2); return gx >= 0 && gy >= 0 && gx < G.gw && gy < G.gh && !G.bloq[gy * G.gw + gx] && puntoEnPoly(x, y, esp.poly); };
   // si hay pasillos dibujados, mandan ellos: no se agrega el pasillo central automático
   const PAS = pasillos.length ? 0 : PASILLO;
   const pu = esp.poly.map(q => q[0] * u[0] + q[1] * u[1]), pf = esp.poly.map(q => q[0] * f[0] + q[1] * f[1]);
-  const u0 = Math.min(...pu), u1 = Math.max(...pu), vmax = Math.max(...pf), fondo = vmax - Math.min(...pf), ancho = u1 - u0; let uc = (u0 + u1) / 2;
+  const u0 = Math.min(...pu), u1 = Math.max(...pu), vmax = fijo ? fijo.x * f[0] + fijo.y * f[1] + 1.4 : Math.max(...pf), fondo = vmax - Math.min(...pf), ancho = u1 - u0;
+  let uc = fijo ? fijo.x * u[0] + fijo.y * u[1] : (u0 + u1) / 2;
   const P = (uu, s) => [u[0] * uu + f[0] * (vmax - s), u[1] * uu + f[1] * (vmax - s)];       // (a lo ancho, distancia al frente) -> plano
   const giro = (dx, dy) => ((Math.atan2(-dx, dy) * 180 / Math.PI) % 360 + 360) % 360;          // para que el mueble mire hacia (dx, dy)
   const items = []; let lugares = 0, conEscenario = false, anchoEsc = 0;
@@ -59,7 +63,8 @@ function construir(nivel, esp, cat, { forma = 'auditorio', personas = 50, frente
   const silla = (x, y, dx, dy) => { if (lugares >= personas || !cabe(x, y, 0.2)) return false; poner('silla', x, y, giro(dx, dy)); lugares++; return true; };
 
   let s0 = 2.2 + ds;
-  if (escenario && forma !== 'ronda') {
+  if (fijo) { conEscenario = true; anchoEsc = fijo.w; s0 = 1.4 + fijo.d / 2 + 1.2 + ds; }
+  else if (escenario && forma !== 'ronda') {
     const w = Math.max(2, Math.min(5, ancho * 0.5));
     // contra la pared del frente, centrado; si ahí hay una puerta o algo, se corre hacia un costado
     for (const off of [0, 1, -1, 2, -2, 3, -3]) {
