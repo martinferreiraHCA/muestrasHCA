@@ -7,16 +7,23 @@ import { itemDesdeTipo } from './estado.js';
 
 const C = 0.2;                       // misma grilla que el simulador
 const PASILLO = 1.8;                 // m libres entre islas y contra las paredes
-const FRENTE = 1.0;                  // m libres delante de cada puesto
+const FRENTE = 1.0;
+const COLORES_GRUPO = ['#c9a36b', '#8fb8de', '#a8d5a2', '#f2b5a0', '#d3b8e6', '#f3d98b', '#9fd6cf', '#e6a8c4'];                  // m libres delante de cada puesto
 
 /**
- * Lee la lista de equipos. Una línea por equipo:  Nombre ; estudiantes ; lugar preferido
- * Los dos últimos datos son opcionales. Sirven como separador ; | tabulación o coma.
- * También se entiende «Robótica (4)» o «Robótica x4». Las líneas que empiezan con # se ignoran.
+ * Lee la lista de equipos. Entiende dos formatos:
+ *  - Simple, una línea por equipo:  Nombre ; estudiantes ; lugar   (los dos últimos opcionales; también
+ *    «Robótica (4)» o «Robótica x4»; las líneas que empiezan con # se ignoran).
+ *  - Planilla pegada, con columnas  Grupo · Equipo · Integrantes · Necesidad  separadas por tabulación y
+ *    títulos de sección entre medio. Los estudiantes se cuentan de los integrantes y de la necesidad se
+ *    sacan los pedidos: un lugar con nombre («Mandala»), pared, lugar libre adelante, enchufe.
  */
 export function leerEquipos(texto, porDefecto = 4) {
+  const lineas = String(texto || '').split(/\r?\n/);
+  const esFila = c => c.length >= 3 && /^\d+\s*\.?\s*[ºo°]?\s*\d*$/i.test(c[0].trim());
+  if (lineas.some(l => esFila(l.split('\t')))) return leerPlanilla(lineas, esFila);
   const eq = [];
-  for (let linea of String(texto || '').split(/\r?\n/)) {
+  for (let linea of lineas) {
     linea = linea.trim(); if (!linea || linea.startsWith('#')) continue;
     let partes = linea.split(/\s*[;|\t]\s*/);
     if (partes.length === 1 && /,\s*\d+\s*(,|$)/.test(linea)) partes = linea.split(/\s*,\s*/);
@@ -24,7 +31,32 @@ export function leerEquipos(texto, porDefecto = 4) {
     if (partes.length === 1) { const m = linea.match(/^(.*?)\s*[(x×]\s*(\d{1,3})\s*\)?$/i); if (m) { nombre = m[1]; estudiantes = +m[2]; } }
     if (!isFinite(estudiantes)) { if (n && !resto.length) resto = [n]; estudiantes = porDefecto; }
     nombre = nombre.trim(); if (!nombre) continue;
-    eq.push({ nombre, estudiantes: Math.max(0, Math.min(40, estudiantes)), lugar: resto.join(' ').trim() });
+    const pedido = resto.join(' ').trim();
+    eq.push({ nombre, estudiantes: Math.max(0, Math.min(40, estudiantes)), ...pedidos(pedido, pedido) });
+  }
+  return eq;
+}
+const sinAcentos = t => t.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+/** Interpreta el texto de la necesidad. `lugarSuelto`: texto que, si no es un pedido conocido, es el nombre de un lugar. */
+function pedidos(texto, lugarSuelto = '') {
+  const t = sinAcentos(texto), r = { lugar: '', necesidad: texto.trim() };
+  if (/\bpared/.test(t)) r.pared = true;
+  if (/libre adelante|interactiv|espacio para|juego/.test(t)) r.libre = true;
+  if (/enchufe|corriente|electric/.test(t)) r.enchufe = true;
+  const m = t.match(/mandala|patio[a-z ]*|hall[a-z0-9 ]*|salon[a-z0-9 ]*|aula \d+|gimnasio|auditorio|comedor|biblioteca|laboratorio|cancha[a-z ]*/);
+  if (m) r.lugar = m[0].trim();
+  else if (lugarSuelto && !r.pared && !r.libre && !r.enchufe && !/flexible|central|sin pedido/.test(t)) r.lugar = lugarSuelto;
+  return r;
+}
+function leerPlanilla(lineas, esFila) {
+  const eq = [], vistos = new Set(); let seccion = '';
+  for (const linea of lineas) {
+    const c = linea.split('\t').map(x => x.trim());
+    if (!esFila(c)) { if (c.length === 1 && c[0] && !/^grupo$/i.test(c[0])) seccion = c[0]; continue; }       // título de sección
+    const nombre = c[1], clave = sinAcentos(nombre); if (!nombre || vistos.has(clave)) continue; vistos.add(clave);         // si se pegó dos veces, cuenta una
+    const integrantes = c[2].split(/,|\s+y\s+|\s+e\s+/i).map(x => x.trim()).filter(Boolean);
+    const nec = (c[3] || '').replace(/Grupo$/, '').trim();
+    eq.push({ nombre, estudiantes: Math.min(40, integrantes.length), grupo: c[0], integrantes: integrantes.join(', '), ...pedidos(nec + ' · ' + seccion), necesidad: nec, seccion });
   }
   return eq;
 }
@@ -58,7 +90,8 @@ export async function distribuir(nivel, proy, equipos, tipo, porMesa = 0, simula
   const mesasDe = q => tipo.modelo === 'stand' || tipo.modelo === 'techo' || !(porMesa > 0) ? 1 : Math.max(1, Math.ceil(q.estudiantes / porMesa));
   const huellaDe = q => {
     const mesas = mesasDe(q), ancho = tipo.w * mesas, M = margenEstudiantes(ancho, tipo.d, q.estudiantes, tipo.modelo === 'stand');
-    return { w: Math.round((ancho + 2 * M.lados) * 5) / 5, d: Math.round((tipo.d + M.atras + M.frente) * 5) / 5, M, mesas, ancho };
+    const extra = q.libre ? 2.2 : 0;                    // lugar libre delante para los puestos interactivos
+    return { w: Math.round((ancho + 2 * M.lados) * 5) / 5, d: Math.round((tipo.d + M.atras + M.frente + extra) * 5) / 5, M, mesas, ancho };
   };
 
   // Nunca delante de una puerta, entrada o salida. Además de las puertas del plano, se buscan los vanos sin
@@ -77,6 +110,7 @@ export async function distribuir(nivel, proy, equipos, tipo, porMesa = 0, simula
       else { if (hueco.length * C >= 0.6 && hueco.length * C <= 3.2) for (const h of hueco) zonas.push([h[0], h[1], 1.0]); hueco = []; }
     }
   }
+  const grupos = [...new Set(equipos.map(q => q.grupo).filter(Boolean))];
   const cache = new Map();
   /** Lugares posibles para una huella w × d en un espacio: contra las paredes (en orden, dando la vuelta) y en islas. */
   function sitios(e, w, d) {
@@ -88,13 +122,13 @@ export async function distribuir(nivel, proy, equipos, tipo, porMesa = 0, simula
       const [fx, fy] = FR[rot], cand = [];
       for (let cy = by0; cy <= by1; cy += C) for (let cx = bx0; cx <= bx1; cx += C) {
         const r = rect(cx, cy, rot), hor = fx === 0, largo = hor ? r.x1 - r.x0 : r.y1 - r.y0;
-        let tot = 0, pared = 0;            // la franja justo detrás tiene que ser pared o el límite del espacio
+        let tot = 0, pared = 0, muro = 0;            // la franja justo detrás tiene que ser pared o el límite del espacio
         for (let t = C / 2; t < largo; t += C) {
           const px = hor ? r.x0 + t : (fx > 0 ? r.x0 - 0.25 : r.x1 + 0.25), py = hor ? (fy > 0 ? r.y0 - 0.25 : r.y1 + 0.25) : r.y0 + t;
-          tot++; if (!libre(px, py) || !puntoEnPoly(px, py, e.poly)) pared++;
+          tot++; if (!libre(px, py)) { pared++; muro++; } else if (!puntoEnPoly(px, py, e.poly)) pared++;
         }
         if (pared < tot * 0.75 || !dentroLibre(r, e.poly) || !dentroLibre(conFrente(r, rot, FRENTE), e.poly) || tocaZona(conFrente(r, rot, FRENTE), zonas)) continue;
-        cand.push({ cx, cy, rot, r });
+        cand.push({ cx, cy, rot, r, muro: muro >= tot * 0.75 });           // muro: hay una pared de verdad detrás, no solo el borde del espacio
       }
       const along = c => (fx === 0 ? c.cx : c.cy);
       cand.sort((a, b) => along(a) - along(b));
@@ -115,9 +149,9 @@ export async function distribuir(nivel, proy, equipos, tipo, porMesa = 0, simula
     for (const q of [...lista].sort(ORDEN[v.orden])) {
       const h = huellaDe(q), S = sitios(e, h.w, h.d), k = Math.floor(S.per.length * v.giro / 4);
       const per = k ? [...S.per.slice(k), ...S.per.slice(0, k)] : S.per;            // por qué pared se empieza
-      const enPared = () => per.find(c => !puestos.some(p => seMolestan(c, p, sep)));
+      const enPared = () => (q.pared && per.find(c => c.muro && !puestos.some(p => seMolestan(c, p, sep)))) || per.find(c => !puestos.some(p => seMolestan(c, p, sep)));
       const enIsla = () => S.isl.find(c => !puestos.some(p => choca(c.r, conFrente(p.r, p.rot, p.isla ? 0 : FRENTE), PASILLO - 0.2)));
-      const c = v.islas ? enIsla() || enPared() : enPared() || enIsla();
+      const c = q.pared ? enPared() : v.islas ? enIsla() || enPared() : enPared() || enIsla();        // quien pidió pared no va al centro
       if (c) puestos.push({ ...c, q, h, e }); else afuera.push(q);
     }
     return afuera;
@@ -130,7 +164,7 @@ export async function distribuir(nivel, proy, equipos, tipo, porMesa = 0, simula
     // reparto entre lugares: primero los que piden uno; el resto, en proporción al perímetro (o al área) de cada lugar
     const peso = espacios.map((e, i) => v.reparto === 'area' ? e.area : perim[i]);
     const asign = espacios.map(() => []), sueltos = [];
-    for (const q of equipos) { const i = q.lugar ? espacios.findIndex(e => e.nombre.toLowerCase().includes(q.lugar.toLowerCase())) : -1; if (i >= 0) asign[i].push(q); else sueltos.push(q); }
+    for (const q of equipos) { const i = q.lugar ? espacios.findIndex(e => sinAcentos(e.nombre).includes(sinAcentos(q.lugar))) : -1; if (i >= 0) asign[i].push(q); else sueltos.push(q); }
     for (const q of sueltos) { let m = 0; espacios.forEach((_, i) => { if ((asign[i].length + 1) / peso[i] < (asign[m].length + 1) / peso[m]) m = i; }); asign[m].push(q); }
     const porEsp = espacios.map(() => []); let resto = [];
     espacios.forEach((e, i) => {
@@ -146,7 +180,9 @@ export async function distribuir(nivel, proy, equipos, tipo, porMesa = 0, simula
   const aItems = puestos => puestos.map(s => {
     const [fx, fy] = FR[s.rot], corr = s.h.M.atras + tipo.d / 2 - s.h.d / 2;          // el mueble dentro de su huella
     const it = itemDesdeTipo(tipo, Math.round((s.cx + fx * corr) * 100) / 100, Math.round((s.cy + fy * corr) * 100) / 100, nivel.id);
-    return Object.assign(it, { rot: s.rot, etiqueta: s.q.nombre, estudiantes: s.q.estudiantes, equipo: true, w: s.h.ancho, mesas: s.h.mesas });
+    const col = s.q.grupo ? COLORES_GRUPO[(grupos.indexOf(s.q.grupo) + COLORES_GRUPO.length) % COLORES_GRUPO.length] : it.color;         // un color por grupo
+    return Object.assign(it, { rot: s.rot, etiqueta: s.q.nombre, estudiantes: s.q.estudiantes, equipo: true, w: s.h.ancho, mesas: s.h.mesas, color: col,
+      grupo: s.q.grupo, integrantes: s.q.integrantes, necesidad: s.q.necesidad, enchufe: s.q.enchufe });
   });
   const cerrar = (d, texto, extra = {}) => ({ items: aItems(d.puestos), sinLugar: d.resto, mesas: d.puestos.reduce((a, s) => a + s.h.mesas, 0), ...extra,
     resumen: `${texto} ${espacios.map(e => `${e.nombre}: ${d.puestos.filter(s => s.e === e).length}`).join(' · ')}.` });

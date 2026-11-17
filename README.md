@@ -16,6 +16,10 @@ las ubicaciones.
 - **Distribución probada con simulación**: antes de ubicar los equipos se arman hasta 12
   distribuciones distintas, se simula la visita con cada una y queda la que menos aglomera;
   después se prueba cambiar de sitio los puestos donde se junta gente.
+- **Planilla de equipos y lugares automáticos**: se puede pegar la planilla tal cual (Grupo, Equipo,
+  Integrantes, Necesidad). Cuenta los integrantes, saca los pedidos (un lugar con nombre, pared,
+  lugar libre adelante, enchufe) y pinta cada grupo de un color. Si no hay lugares elegidos, los
+  elige el sistema y va sumando los más cercanos hasta que entren todos.
 - **Armar el salón solo**: distribuye sillas y mesas automáticamente en un lugar para una cantidad
   de personas: auditorio (filas con pasillo), anfiteatro (filas curvas), aula, mesas en U, mesas
   redondas o ronda; con el frente hacia el lado que se elija y escenario opcional.

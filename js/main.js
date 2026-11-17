@@ -116,7 +116,7 @@ const ETAPAS = [
   { id: 'lugares', t: 'Lugares', titulo: 'Elegir los lugares', vista: 'plano', herr: 'espacios',
     ayuda: 'Tocá en el plano los lugares donde va a ser la muestra, o tildalos en la lista. Si un límite está mal, corregilo con «Editar forma»; si falta un lugar, dibujalo con Rectángulo o Polígono.' },
   { id: 'equipos', t: 'Equipos', titulo: 'Cargar los equipos', vista: 'plano', herr: 'mover',
-    ayuda: 'Escribí los equipos, uno por renglón, y apretá «Distribuir»: el sistema arma varias distribuciones, simula la visita con cada una y deja la que mejor circula. Conviene marcar antes la Entrada (panel de la izquierda). Si no tenés equipos, seguí al paso siguiente.' },
+    ayuda: 'Escribí los equipos, uno por renglón, o pegá la planilla (Grupo, Equipo, Integrantes, Necesidad) y apretá «Distribuir». Si no elegiste lugares, el sistema los elige solo. el sistema arma varias distribuciones, simula la visita con cada una y deja la que mejor circula. Conviene marcar antes la Entrada (panel de la izquierda). Si no tenés equipos, seguí al paso siguiente.' },
   { id: 'muebles', t: 'Muebles', titulo: 'Distribuir los muebles', vista: 'plano', herr: 'mover',
     ayuda: 'Podés armar el salón solo (auditorio, anfiteatro, aula…) con el panel de la izquierda, o a mano: tocá un elemento de la lista para agregarlo y arrastralo a su lugar. Con uno seleccionado, a la derecha podés cambiarle el nombre, los estudiantes y repetirlo en filas.' },
   { id: 'recorrido', t: 'Recorrido', titulo: 'Entrada, salida y circulación', vista: 'sim', herr: 'mover',
@@ -137,7 +137,7 @@ function enfocarLugar() {
 async function irEtapa(n, mover = true) {
   n = Math.min(ETAPAS.length, Math.max(1, n));
   let e = ETAPAS[n - 1];
-  if (n > 2 && !lugares().length) { aviso('Primero elegí al menos un lugar para la muestra.'); n = 2; e = ETAPAS[1]; }
+  if (n > 2 && !lugares().length && e.id !== 'equipos') { aviso('Primero elegí al menos un lugar para la muestra.'); n = 2; e = ETAPAS[1]; }
   proyecto().etapa = n; avisar('etapa');
   document.querySelectorAll('.panel.izq section[data-en]').forEach(s => s.classList.toggle('oculto', !$('chkTodoPanel').checked && !s.dataset.en.split(',').includes(e.id)));
   await ver(e.vista);
@@ -191,11 +191,46 @@ function contarEquipos() {
   return l;
 }
 function guardarEquipos() { proyecto().equipos = { texto: $('eqTexto').value, tipo: $('eqTipo').value, porDef: num($('eqPorDef').value, 0, 40, 4), porMesa: num($('eqPorMesa').value, 0, 40, 4) }; avisar('nombre'); pintarGuia(); }
+const sinAc = t => t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+const NO_SIRVE = /^(ss\.?hh|dep[oó]sito|cocina|oficina|administraci|direcci|recepci|vestuario|porter|kitchenette|sala de dormir|cancha|explanada|juegos|gradas|aulas y comedor|pasaje|jard[ií]n)/i;
+/**
+ * Elige solo los lugares para los equipos: los que algún equipo pide por nombre (cambiando de nivel si hace
+ * falta) y, si no alcanzan, va sumando los más cercanos hasta que entren todos. Devuelve los que agregó.
+ */
+async function elegirLugares(equipos, tipo, porMesa) {
+  const p = proyecto(), agregados = [], pedidos = [...new Set(equipos.map(q => q.lugar).filter(Boolean).map(sinAc))];
+  const tiene = (niv, t) => espaciosDe(niv, p).find(e => sinAc(e.nombre).includes(t));
+  // si lo pedido está en otro nivel y acá todavía no hay nada elegido, se pasa a ese nivel
+  if (pedidos.length && !lugares().length && !pedidos.some(t => tiene(nivel, t))) for (const info of indice) {
+    const niv = await cargarNivel(info);
+    if (pedidos.some(t => tiene(niv, t))) { p.nivel = info.id; await fijarNivel(info.id); break; }
+  }
+  const sumar = e => { if (!p.espacios.includes(e.id)) { p.espacios.push(e.id); agregados.push(e.nombre); } };
+  for (const t of pedidos) { const e = tiene(nivel, t); if (e) sumar(e); }
+  const posibles = () => espaciosDe(nivel, p).filter(e => !p.espacios.includes(e.id) && !e.auto && e.area >= 18 && !NO_SIRVE.test(e.nombre));
+  // sin nada elegido: se parte del salón o hall techado más grande (si no hay, de un patio)
+  const techado = e => !e.exterior && !e.propio, util = /hall|sal[oó]n|antesala|mandala|comedor|auditorio|gimnasio|biblioteca|galer/i;
+  if (!lugares().length) { const o = posibles().sort((a, b) => b.area - a.area), e = o.find(x => techado(x) && util.test(x.nombre)) || o.find(techado) || o[0]; if (e) sumar(e); }
+  for (let k = 0; k < 10 && lugares().length; k++) {
+    const r = await distribuir(nivel, p, equipos, tipo, porMesa, null);
+    if (!r.sinLugar.length) break;
+    const ancla = lugares(), dist = e => Math.min(...ancla.map(a => Math.hypot(a.cx - e.cx, a.cy - e.cy)));
+    // se suman los más cercanos: primero halls y salones, después aulas, y los patios al final
+    const orden = e => (techado(e) ? 0 : 2) + (/^aula/i.test(e.nombre) ? 1 : 0);
+    const e = posibles().sort((a, b) => orden(a) - orden(b) || dist(a) - dist(b))[0];
+    if (!e) break; sumar(e);
+  }
+  if (agregados.length) avisar('espacios');
+  return agregados;
+}
 async function distribuirEquipos() {
   guardarEquipos();
   const l = contarEquipos(), p = proyecto();
   if (!l.length) return aviso('Escribí al menos un equipo, uno por renglón.');
-  if (!lugares().length) return aviso('Primero elegí los lugares de la muestra.');
+  const tipoEq = E.catalogo().find(t => t.id === $('eqTipo').value), porMesa = num($('eqPorMesa').value, 0, 40, 4);
+  aviso('Buscando lugar para los equipos…'); await new Promise(f => setTimeout(f, 30));
+  const elegidos = await elegirLugares(l, tipoEq, porMesa);
+  if (!lugares().length) return aviso('No encontré lugares donde ubicar los equipos en este nivel. Elegí alguno a mano en el paso 2.');
   const previos = p.items.filter(i => i.equipo && i.nivel === nivel.id).length;
   if (previos && !await confirmar(`Ya hay ${previos} puestos de equipos ubicados. ¿Los reemplazo por una distribución nueva?`, 'Reemplazar')) return;
   aviso('Preparando las distribuciones…'); $('btnDistribuir').disabled = true; await new Promise(f => setTimeout(f, 30));
@@ -204,21 +239,27 @@ async function distribuirEquipos() {
   const fijos = p.items.filter(i => i.nivel === nivel.id && !i.equipo);
   let entProv = null;
   if (!fijos.some(esEntrada) && nivel.id === 'pb') {
-    const dest = [...lugares()].sort((a, b) => b.area - a.area)[0], ruta = new Simulacion(nivel, { ...p, items: [] }, {}, 1, { x0: 0, y0: 0, x1: nivel.ancho, y1: nivel.alto }).camino([102.4, 46.6], [dest.cx, dest.cy], 1.4);
-    const k = ruta ? ruta.findIndex(q => lugares().some(e => puntoEnPoligono(q[0], q[1], e.poly))) : -1;
-    if (k >= 0) { const q = ruta[Math.min(ruta.length - 1, k + 6)]; entProv = { ...E.itemDesdeTipo(E.catalogo().find(t => t.id === 'entrada'), q[0], q[1], nivel.id) }; }
+    const G0 = new Simulacion(nivel, { ...p, items: [] }, {}, 1, { x0: 0, y0: 0, x1: nivel.ancho, y1: nivel.alto });
+    for (const dest of [...lugares()].sort((a, b) => b.area - a.area)) {          // el primer lugar al que se pueda llegar caminando desde el portón
+      const ruta = G0.camino([102.4, 46.6], [dest.cx, dest.cy], 1.4), k = ruta ? ruta.findIndex(q => lugares().some(e => puntoEnPoligono(q[0], q[1], e.poly))) : -1;
+      if (k >= 0) { const q = ruta[Math.min(ruta.length - 1, k + 6)]; entProv = { ...E.itemDesdeTipo(E.catalogo().find(t => t.id === 'entrada'), q[0], q[1], nivel.id) }; break; }
+    }
   }
   const q = parSim(), vis = Math.min(q.visitantes, 80), parEv = { ...q, visitantes: vis, porMinuto: Math.max(q.porMinuto, vis / 6), tandas: false, seguir: -1 };
   const simular = fijos.some(esEntrada) || entProv ? items => {
     const s = new Simulacion(nivel, { ...p, items: [...fijos, ...(entProv ? [entProv] : []), ...items] }, parEv); const r = s.completar(3600);
     return { r, diag: s.diagnostico() };
   } : null;
-  const r = await distribuir(nivel, p, l, E.catalogo().find(t => t.id === $('eqTipo').value), num($('eqPorMesa').value, 0, 40, 4), simular,
+  const r = await distribuir(nivel, p, l, tipoEq, porMesa, simular,
     async t => { $('eqResultado').textContent = t; aviso(t); await new Promise(f => setTimeout(f, 0)); });
   if (entProv && r.ensayos) r.resumen += ' Como no hay Entrada marcada, supuse que la gente llega desde el portón; si entra por otro lado, marcá la Entrada y volvé a distribuir.';
   marcar();
   p.items = [...p.items.filter(i => !(i.equipo && i.nivel === nivel.id)), ...r.items];
   ui.seleccion.clear(); avisar('items'); P.encuadrar();
+  const ench = r.items.filter(i => i.enchufe).map(i => i.etiqueta), sinPedido = l.filter(q => q.lugar && !lugares().some(e => sinAc(e.nombre).includes(sinAc(q.lugar)))).map(q => `${q.nombre} (${q.lugar})`);
+  if (elegidos.length) r.resumen = `Elegí estos lugares en ${nivel.nombre}: ${elegidos.join(', ')}. ` + r.resumen;
+  if (ench.length) r.resumen += ` Piden enchufe cerca: ${ench.join(', ')}; el plano no indica dónde hay enchufes, así que eso revisalo en el lugar.`;
+  if (sinPedido.length) r.resumen += ` No encontré en el plano el lugar pedido por: ${sinPedido.join(', ')}. Buscalo en la lista de lugares, ponele ese nombre con el lápiz y volvé a distribuir.`;
   $('eqResultado').innerHTML = `<b>${r.items.length} de ${l.length} equipos ubicados${r.mesas > r.items.length ? `, con ${r.mesas} mesas` : ''}.</b> ${esc(r.resumen)}` +
     (r.sinLugar.length ? ` <span class="alerta">No entraron: ${esc(r.sinLugar.map(e => e.nombre).join(', '))}. Elegí más lugares o un mueble más chico.</span>` : '');
   $('btnDistribuir').disabled = false; if (vistaSim) simCrear();
@@ -647,6 +688,7 @@ function pintarPanel() {
   const comun = k => sel.every(i => i[k] === u[k]) ? u[k] : '';
   el.innerHTML = `
     <section><h2>${varios ? sel.length + ' elementos' : esc(u.nombre)}</h2>
+      ${!varios && u.grupo ? `<p class="ayuda"><b>${esc(u.grupo)}</b> · ${esc(u.integrantes || '')}${u.necesidad ? `<br><b>Pide:</b> ${esc(u.necesidad)}` : ''}</p>` : ''}
       <label>Nombre en el plano<input id="pEtiqueta" type="text" value="${esc(comun('etiqueta'))}" placeholder="${varios ? 'Mismo texto para todos' : 'Ej.: Stand 3 · 5.º B'}"></label>
       <div class="fila3">
         <label>Ancho (m)<input id="pW" type="number" min="0.05" max="60" step="0.05" value="${comun('w')}"></label>
