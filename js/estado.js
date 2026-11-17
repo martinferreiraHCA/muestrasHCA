@@ -2,9 +2,14 @@
 
 const CLAVE = 'muestrasHCA.v1';
 
-export const GRUPOS = ['Mesas y asientos', 'Stands y exhibición', 'Escenario y audiovisual', 'Ambientación y señalización', 'Circulación'];
+export const GRUPOS = ['Mobiliario del colegio', 'Mesas y asientos', 'Stands y exhibición', 'Escenario y audiovisual', 'Ambientación y señalización', 'Circulación'];
 const G = (grupo, lista) => lista.map(t => ({ ...t, grupo }));
 export const CATALOGO_BASE = [
+  // Inventario del colegio: `codigo` es el número de inventario y `stock` cuántos hay.
+  ...G('Mobiliario del colegio', [
+    { id: 'fis-080', codigo: 'FIS-080', stock: 4, nombre: 'Mesa grande de trabajo (madera)', modelo: 'mesa', w: 1.5, d: 0.7, h: 0.9, color: '#a9793f' },
+    { id: 'fis-081', codigo: 'FIS-081', stock: 2, nombre: 'Armario metálico', modelo: 'caja', w: 0.9, d: 0.4, h: 1.8, color: '#8d99a6' },
+  ]),
   ...G('Mesas y asientos', [
     { id: 'mesa', nombre: 'Mesa', modelo: 'mesa', w: 1.2, d: 0.6, h: 0.75, color: '#c9a36b' },
     { id: 'mesa-escolar', nombre: 'Mesa escolar', modelo: 'mesa', w: 0.6, d: 0.45, h: 0.72, color: '#d8b98a' },

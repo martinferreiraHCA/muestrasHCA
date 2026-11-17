@@ -176,7 +176,7 @@ function pintarGuia() {
 const puntoEnPoligono = (x, y, p) => { let d = false; for (let i = 0, j = p.length - 1; i < p.length; j = i++) if ((p[i][1] > y) !== (p[j][1] > y) && x < (p[j][0] - p[i][0]) * (y - p[i][1]) / (p[j][1] - p[i][1]) + p[i][0]) d = !d; return d; };
 
 // ---------- equipos en texto plano y distribución automática ----------
-const TIPOS_EQ = ['stand', 'mesa', 'tablon', 'mesa-redonda', 'mesa-escolar', 'gazebo'];
+const TIPOS_EQ = ['fis-080', 'stand', 'mesa', 'tablon', 'mesa-redonda', 'mesa-escolar', 'gazebo'];
 function pintarEquipos() {
   const q = proyecto().equipos || {};
   const tipos = E.catalogo().filter(t => TIPOS_EQ.includes(t.id) || !t.grupo);
@@ -670,10 +670,11 @@ function pintarEspacios() {
 
 function pintarCatalogo() {
   const propios = new Set(E.estado.catalogoPropio.map(t => t.id));
+  const usados = id => proyecto().items.filter(i => i.tipo === id).reduce((n, i) => n + (i.mesas || 1), 0);        // en toda la muestra
   const boton = t => `
     <button class="tipo" draggable="true" data-id="${t.id}" title="Agregar ${esc(t.nombre)}">
       <span class="muestra ${['mesa-redonda', 'cilindro', 'persona'].includes(t.modelo) ? 'redonda' : ''}" style="background:${t.color}"></span>
-      <span><b>${esc(t.nombre)}</b><small>${t.w} × ${t.d} m</small></span>
+      <span><b>${esc(t.nombre)}</b><small>${t.w} × ${t.d} m${t.stock ? ` · ${t.codigo} · <span class="${usados(t.id) > t.stock ? 'alerta' : ''}">${usados(t.id)} de ${t.stock}</span>` : ''}</small></span>
       ${propios.has(t.id) ? '<span class="editar" data-a="editar" title="Editar este elemento">✎</span>' : ''}
     </button>`;
   const todos = E.catalogo(), grupos = [...(E.estado.catalogoPropio.length ? ['Mis elementos'] : []), ...E.GRUPOS];
@@ -1066,7 +1067,7 @@ async function arrancar() {
     if (vistaFol) { pintarFolleto(); if (que === 'folleto') return; }
     if (que !== 'nombre' && que !== 'sol' && que !== 'etapa' && sim) { sim = null; simComp = null; simPausar(); if (vistaSim) simCrear(); }
     if (que !== 'items' && que !== 'nombre') pintarEspacios();
-    if (que === 'catalogo' || que === 'todo') pintarCatalogo();
+    if (que === 'catalogo' || que === 'todo' || que === 'items') pintarCatalogo();
     if (que !== 'nombre') pintarPanel();
     P.pedir();
     if (vistaIso && iso && que !== 'nombre') { clearTimeout(tIso); tIso = setTimeout(() => iso.actualizarIso(nivel, proyecto(), opIso()), 60); }
