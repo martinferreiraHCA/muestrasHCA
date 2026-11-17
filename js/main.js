@@ -1,7 +1,7 @@
 // Interfaz: une el estado, el editor 2D, la vista isométrica y la exportación.
 import * as E from './estado.js';
 import { proyecto, marcar, avisar, uid } from './estado.js';
-import { cargarIndice, cargarNivel as cargarCrudo, nivelVisible, edificiosOcultos, zonasLibres, espaciosDe, espaciosElegidos, geo } from './niveles.js';
+import { cargarIndice, cargarNivel as cargarCrudo, nivelVisible, edificiosOcultos, zonasLibres, capacidadMesa, espaciosDe, espaciosElegidos, geo } from './niveles.js';
 import * as SOL from './sol.js';
 import { leerEquipos, distribuir, colorEquipo } from './equipos.js';
 import { armarSala, FORMAS } from './asientos.js';
@@ -241,6 +241,47 @@ function alAsignar(it, x, y) {
     it = E.itemDesdeTipo(tipo, x, y, nivel.id); proyecto().items.push(it);
   }
   asignarEquipo(it, q, l); avisar('items'); siguienteEquipo();
+}
+/**
+ * Reparte los equipos de la lista en las mesas que ya están puestas: a cada equipo, la mesa donde mejor
+ * entran todos sus integrantes, respetando el lugar o la pared que pidió y dejando juntas las categorías.
+ */
+async function repartirEnMesas() {
+  guardarEquipos();
+  const l = listaEquipos(), p = proyecto(), esp = lugares();
+  if (!l.length) return aviso('Cargá primero la lista de equipos.');
+  const sirve = i => i.nivel === nivel.id && !['zona', 'texto', 'persona', 'silla', 'techo', 'panel'].includes(i.modelo) && i.auto !== 'sala' && !['tarima', 'escenario', 'fis-081', 'grada', 'parlante', 'atril', 'planta', 'tacho', 'dispenser', 'vitrina', 'caballete', 'maqueta', 'puff'].includes(i.tipo)
+    && (!esp.length || esp.some(e => puntoEnPoligono(i.x, i.y, e.poly)));
+  let mesas = p.items.filter(sirve);
+  if (!mesas.length) return aviso(esp.length ? 'No hay mesas puestas en los lugares elegidos. Poné las mesas (paso Muebles) y volvé.' : 'Todavía no pusiste mesas en este nivel.');
+  const ocupadas = mesas.filter(m => m.equipo);
+  if (ocupadas.length && !await confirmar(`Ya hay ${ocupadas.length} mesas con equipo. ¿Reparto todo de nuevo?`, 'Repartir de nuevo')) mesas = mesas.filter(m => !m.equipo);
+  marcar(); mesas.forEach(m => { if (m.equipo) quitarEquipo(m); });
+  const pendientes = l.filter(q => !mesaDe(q.nombre));
+  // distancia de la mesa al muro más cercano (para los que piden pared)
+  const S = nivel.muros, aMuro = m => { let d = Infinity; for (let i = 0; i < S.length; i += 4) { const ax = S[i], ay = S[i + 1], bx = S[i + 2] - ax, by = S[i + 3] - ay, t = Math.max(0, Math.min(1, ((m.x - ax) * bx + (m.y - ay) * by) / (bx * bx + by * by || 1))); d = Math.min(d, Math.hypot(m.x - ax - bx * t, m.y - ay - by * t)); } return d; };
+  const info = new Map(mesas.map(m => [m, { cap: capacidadMesa(m), pared: aMuro(m) < Math.max(m.w, m.d) / 2 + 1.0, lugar: esp.find(e => puntoEnPoligono(m.x, m.y, e.poly)) }]));
+  const libres = new Set(mesas), puestos = [], chicas = [], sinPared = [];
+  // primero los más exigentes: los que piden lugar o pared, y los más numerosos
+  for (const q of [...pendientes].sort((a, b) => (!!b.lugar - !!a.lugar) || (!!b.pared - !!a.pared) || b.estudiantes - a.estudiantes)) {
+    let mejor = null, costo = Infinity;
+    for (const m of libres) {
+      const f = info.get(m), junto = puestos.filter(x => x.q.categoria && x.q.categoria === q.categoria), cerca = junto.length ? Math.min(...junto.map(x => Math.hypot(x.m.x - m.x, x.m.y - m.y))) : 0;
+      const c = (f.cap < q.estudiantes ? 100 + (q.estudiantes - f.cap) * 12 : (f.cap - q.estudiantes) * 1.5) + (q.pared && !f.pared ? 60 : 0)
+        + (q.lugar && !(f.lugar && sinAc(f.lugar.nombre).includes(sinAc(q.lugar))) ? 80 : 0) + cerca * 0.8;
+      if (c < costo) { costo = c; mejor = m; }
+    }
+    if (!mejor) break;
+    libres.delete(mejor); asignarEquipo(mejor, q, l); puestos.push({ q, m: mejor });
+    const f = info.get(mejor); if (f.cap < q.estudiantes) chicas.push(`${q.nombre} (${q.estudiantes} en una mesa para ${f.cap})`); if (q.pared && !f.pared) sinPared.push(q.nombre);
+  }
+  avisar('items');
+  const faltan = pendientes.filter(q => !mesaDe(q.nombre));
+  $('eqManual').innerHTML = `<b>${puestos.length} equipos repartidos</b> en las mesas que pusiste, cada uno con todos sus integrantes alrededor.${libres.size ? ` Quedaron ${libres.size} mesas libres.` : ''}`
+    + (faltan.length ? ` <span class="alerta">Faltan mesas para ${faltan.length}: ${esc(faltan.map(q => q.nombre).join(', '))}.</span>` : '')
+    + (chicas.length ? ` <span class="alerta">Quedan apretados: ${esc(chicas.join(', '))}; conviene una mesa más grande o sumar otra.</span>` : '')
+    + (sinPared.length ? ` <span class="alerta">Pidieron pared y no había mesa contra una: ${esc(sinPared.join(', '))}.</span>` : '');
+  aviso(`${puestos.length} equipos repartidos.`);
 }
 function guardarEquipos() { equipoActivo = null; proyecto().equipos = { texto: $('eqTexto').value, tipo: $('eqTipo').value, porDef: num($('eqPorDef').value, 0, 40, 4), porMesa: num($('eqPorMesa').value, 0, 40, 4) }; avisar('nombre'); pintarGuia(); }
 const sinAc = t => t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
@@ -1040,6 +1081,7 @@ function conectar() {
   $('chkTodoPanel').onchange = () => irEtapa(etapa(), false);
   $('eqTexto').oninput = () => { contarEquipos(); }; $('eqTexto').onchange = $('eqTipo').onchange = $('eqPorDef').onchange = $('eqPorMesa').onchange = guardarEquipos;
   $('btnDistribuir').onclick = () => distribuirEquipos();
+  $('btnRepartirMesas').onclick = repartirEnMesas;
   $('eqLista').onclick = e => {
     const f = e.target.closest('.eq'); if (!f) return;
     if (e.target.dataset.a === 'quitar') { const m = mesaDe(f.dataset.eq); if (m) { marcar(); quitarEquipo(m); avisar('items'); } return; }

@@ -155,6 +155,11 @@ export function carasEstudiantes(w, d, n, stand = false) {
   }
   return r;
 }
+/** Cuántos estudiantes entran pegados a un mueble, en una sola vuelta. */
+export function capacidadMesa(it) {
+  const stand = it.modelo === 'stand', capW = Math.max(1, Math.floor((stand ? it.w - 0.5 : it.w + 0.1) / SEP_EST)), capD = Math.max(1, Math.floor((stand ? it.d - 0.9 : it.d + 0.1) / SEP_EST));
+  return stand ? capW + 2 * capD : 2 * capW + 2 * capD;
+}
 /** Lugar que hay que dejar libre alrededor de una mesa para sus estudiantes. */
 export function margenEstudiantes(w, d, n, stand = false) {
   if (stand || n <= 0) return { atras: 0, lados: 0, frente: 0 };
