@@ -1107,6 +1107,26 @@ async function exportarPDF() {
   } catch (e) { console.error(e); aviso('No se pudo generar el PDF: ' + e.message); }
 }
 
+// ---------- guardar y abrir en un archivo ----------
+function guardarArchivo() {
+  const p = proyecto(), hoy = new Date(), f = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
+  descargar(`${archivo(p.nombre)}_${f}.muestra.json`, JSON.stringify(E.exportarProyecto()), 'application/json');
+  aviso('Muestra guardada en un archivo. Llevalo a la otra computadora y abrilo con «Abrir».');
+}
+function abrirArchivo() {
+  const inp = Object.assign(document.createElement('input'), { type: 'file', accept: '.json,application/json' });
+  inp.onchange = async () => {
+    try {
+      const obj = JSON.parse(await inp.files[0].text());
+      const local = E.estado.proyectos.find(x => x.id === obj.id);
+      if (local && !await confirmar(`Esta computadora ya tiene «${local.nombre}». ¿La reemplazo por la del archivo${obj.guardado ? ` (guardada el ${new Date(obj.guardado).toLocaleString('es-UY')})` : ''}?`, 'Reemplazar')) return;
+      E.importarProyecto(obj); await fijarNivel(proyecto().nivel); await irEtapa(etapa());
+      aviso(`Muestra «${proyecto().nombre}» abierta: ${proyecto().items.length} elementos.`);
+    } catch (e) { aviso('No se pudo abrir el archivo: ' + (e instanceof SyntaxError ? 'no es un archivo de muestra' : e.message)); }
+  };
+  inp.click();
+}
+
 // ---------- menú de la muestra ----------
 async function menuProyecto() {
   const r = await dialogo(`<h3>${esc(proyecto().nombre)}</h3><div class="menu">
@@ -1118,15 +1138,8 @@ async function menuProyecto() {
     </div><div class="pie"><button value="cancelar">Cerrar</button></div>`);
   if (!r) return;
   if (r._accion === 'duplicar') E.duplicarProyecto();
-  if (r._accion === 'exportar') descargar(archivo(proyecto().nombre) + '.muestra.json', JSON.stringify(E.exportarProyecto(), null, 1), 'application/json');
-  if (r._accion === 'importar') {
-    const inp = Object.assign(document.createElement('input'), { type: 'file', accept: '.json,application/json' });
-    inp.onchange = async () => {
-      try { E.importarProyecto(JSON.parse(await inp.files[0].text())); await fijarNivel(proyecto().nivel); aviso('Muestra abierta.'); }
-      catch (e) { aviso('No se pudo abrir: ' + e.message); }
-    };
-    inp.click();
-  }
+  if (r._accion === 'exportar') guardarArchivo();
+  if (r._accion === 'importar') abrirArchivo();
   if (r._accion === 'vaciar' && await confirmar(`¿Quitar todos los elementos de ${nivel.nombre}?`, 'Quitar')) {
     marcar(); const p = proyecto(); p.items = p.items.filter(i => i.nivel !== nivel.id); ui.seleccion.clear(); avisar('items');
   }
@@ -1153,7 +1166,7 @@ function conectar() {
   $('panelDer').addEventListener('click', e => { const b = e.target.closest('[data-fix]'); if (b) simArreglar(b.dataset.fix); });
   $('btnSimYa').onclick = simYa; $('btnEncuadrar2').onclick = P.encuadrar;
   $('btnDeshacer').onclick = () => E.deshacer(); $('btnRehacer').onclick = () => E.rehacer();
-  $('btnPDF').onclick = exportarPDF;
+  $('btnPDF').onclick = exportarPDF; $('btnGuardar').onclick = guardarArchivo; $('btnAbrir').onclick = abrirArchivo;
   $('inNombre').oninput = e => { proyecto().nombre = e.target.value; avisar('nombre'); };
   $('inFecha').onchange = e => { proyecto().fecha = e.target.value; avisar('nombre'); };
   $('inInicio').onchange = e => { proyecto().horaInicio = e.target.value; avisar('sim'); };
@@ -1240,6 +1253,8 @@ function conectar() {
   window.addEventListener('keydown', e => {
     if ($('dlg').open || e.target.matches('input, select, textarea')) return;
     const ctrl = e.ctrlKey || e.metaKey, k = e.key.toLowerCase();
+    if (ctrl && k === 's') { e.preventDefault(); guardarArchivo(); return; }
+    if (ctrl && k === 'o') { e.preventDefault(); abrirArchivo(); return; }
     if (ctrl && k === 'z') { e.preventDefault(); e.shiftKey ? E.rehacer() : E.deshacer(); return; }
     if (ctrl && k === 'y') { e.preventDefault(); E.rehacer(); return; }
     if (vistaIso || vistaFol) return;

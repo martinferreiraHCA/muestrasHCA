@@ -146,3 +146,7 @@ Grilla de 20 cm con los muros, ventanas y muebles como obstáculos; campos de di
 (Dijkstra) hacia cada parada y hacia la salida; separación entre personas y velocidad que
 baja con la densidad. Es una aproximación para comparar distribuciones, no un estudio de
 evacuación.
+
+## Guardar y seguir en otra computadora
+
+El trabajo se guarda solo en el navegador de cada computadora. Para llevarlo a otra: **Guardar** (arriba a la derecha, o Ctrl+S) descarga un archivo `.muestra.json` con toda la muestra (espacios, muebles, equipos, simulación, folleto y elementos propios). En la otra computadora, **Abrir** (Ctrl+O) y elegir ese archivo. Si la muestra ya existía ahí, pregunta antes de reemplazarla.

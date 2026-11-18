@@ -140,17 +140,22 @@ export function eliminarProyecto() {
   if (!estado.proyectos.length) estado.proyectos.push(proyectoNuevo('Mi primera muestra'));
   abrirProyecto(estado.proyectos[0].id);
 }
+/** Abre una muestra guardada en un archivo. Si ya estaba en esta computadora, la reemplaza por la del archivo. */
 export function importarProyecto(obj) {
   if (!obj || !Array.isArray(obj.items)) throw new Error('El archivo no es una muestra válida');
-  const p = Object.assign(proyectoNuevo(), obj, { id: uid() });
-  (obj.catalogoPropio || []).forEach(t => { if (!catalogo().some(c => c.id === t.id)) estado.catalogoPropio.push(t); });
-  delete p.catalogoPropio;
-  estado.proyectos.push(p); abrirProyecto(p.id);
+  (obj.catalogoPropio || []).forEach(t => { const i = estado.catalogoPropio.findIndex(c => c.id === t.id); if (i >= 0) estado.catalogoPropio[i] = t; else if (!CATALOGO_BASE.some(c => c.id === t.id)) estado.catalogoPropio.push(t); });
+  const p = Object.assign(proyectoNuevo(), obj, { id: obj.id || uid() });
+  delete p.catalogoPropio; delete p.guardado; delete p.formato;
+  const i = estado.proyectos.findIndex(x => x.id === p.id);
+  if (i >= 0) estado.proyectos[i] = p; else estado.proyectos.push(p);
+  // la muestra vacía con la que arranca una computadora nueva no hace falta
+  estado.proyectos = estado.proyectos.filter(x => x.id === p.id || x.items.length || (x.espacios || []).length || (x.equipos || []).length || x.equiposTexto);
+  abrirProyecto(p.id);
+  return i >= 0;
 }
+/** Todo lo necesario para retomar la muestra en otra computadora: la muestra completa y los elementos propios. */
 export function exportarProyecto() {
-  const p = proyecto();
-  const usados = new Set(p.items.map(i => i.tipo));
-  return { ...p, catalogoPropio: estado.catalogoPropio.filter(t => usados.has(t.id)) };
+  return { formato: 'muestrasHCA-1', guardado: new Date().toISOString(), ...proyecto(), catalogoPropio: estado.catalogoPropio };
 }
 
 export function itemDesdeTipo(tipo, x, y, nivel) {
