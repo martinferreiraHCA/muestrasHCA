@@ -22,6 +22,9 @@ las ubicaciones.
   categoría («Programación — 9 equipos») y columna de estado, colorea por categoría, intenta
   dejar cada categoría junta y lista los equipos con pendientes; las frases de comentario se ignoran. Si no hay lugares elegidos, los
   elige el sistema y va sumando los más cercanos hasta que entren todos.
+- **Actualizar la lista**: al pegar de nuevo la lista de equipos, los ya ubicados se actualizan sin
+  moverse (integrantes, cantidad, grupo, categoría, pedido, estado); avisa cuáles son nuevos y
+  cuáles ya no están.
 - **Asignar equipos a mano**: con la lista cargada, se toca un equipo y después la mesa que le toca
   (de cualquier tipo); en un lugar vacío pone una mesa nueva. También se asigna desde las
   propiedades de la mesa. La lista muestra quién tiene mesa y dónde.

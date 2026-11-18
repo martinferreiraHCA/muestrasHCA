@@ -247,7 +247,7 @@ function alAsignar(it, x, y) {
  * entran todos sus integrantes, respetando el lugar o la pared que pidió y dejando juntas las categorías.
  */
 async function repartirEnMesas() {
-  guardarEquipos();
+  guardarEquipos(false);
   const l = listaEquipos(), p = proyecto(), esp = lugares();
   if (!l.length) return aviso('Cargá primero la lista de equipos.');
   const sirve = i => i.nivel === nivel.id && !['zona', 'texto', 'persona', 'silla', 'techo', 'panel'].includes(i.modelo) && i.auto !== 'sala' && !['tarima', 'escenario', 'fis-081', 'grada', 'parlante', 'atril', 'planta', 'tacho', 'dispenser', 'vitrina', 'caballete', 'maqueta', 'puff'].includes(i.tipo)
@@ -283,7 +283,50 @@ async function repartirEnMesas() {
     + (sinPared.length ? ` <span class="alerta">Pidieron pared y no había mesa contra una: ${esc(sinPared.join(', '))}.</span>` : '');
   aviso(`${puestos.length} equipos repartidos.`);
 }
-function guardarEquipos() { equipoActivo = null; proyecto().equipos = { texto: $('eqTexto').value, tipo: $('eqTipo').value, porDef: num($('eqPorDef').value, 0, 40, 4), porMesa: num($('eqPorMesa').value, 0, 40, 4) }; avisar('nombre'); pintarGuia(); }
+/**
+ * Al pegar de nuevo la lista, actualiza los equipos que ya están ubicados sin mover nada: integrantes,
+ * cantidad, grupo, categoría, pedido, estado y color. Los reconoce por el nombre.
+ */
+let ultimoSync = '';
+function sincronizarEquipos() {
+  const p = proyecto(), l = listaEquipos(), clave = t => sinAc(t).replace(/[^a-z0-9]/g, ''), puestos = p.items.filter(i => i.equipo);
+  if (!puestos.length || !l.length) return;
+  const porNombre = new Map(l.map(q => [clave(q.nombre), q]));
+  const huella = i => JSON.stringify([i.etiqueta, i.color, ...CAMPOS_EQ.map(k => i[k])]);
+  const cambios = [], apretados = [], sobran = [];
+  let marcado = false;
+  for (const it of puestos) {
+    const q = porNombre.get(clave(it.etiqueta));
+    if (!q) { sobran.push(it); continue; }
+    const antes = huella(it), estAntes = it.estudiantes | 0;
+    const copia = { ...it }; asignarSoloDatos(copia, q, l);
+    if (huella(copia) === antes) continue;
+    if (!marcado) { marcar(); marcado = true; }
+    asignarSoloDatos(it, q, l);
+    cambios.push(it.etiqueta + ((it.estudiantes | 0) !== estAntes ? ` (${estAntes} → ${it.estudiantes | 0} estudiantes)` : ''));
+    if ((it.estudiantes | 0) > capacidadMesa(it)) apretados.push(it.etiqueta);
+  }
+  const nuevos = l.filter(q => !puestos.some(i => clave(i.etiqueta) === clave(q.nombre)));
+  if (marcado) avisar('items');
+  if (!cambios.length && !nuevos.length && !sobran.length) return;
+  const html = `<b>Lista actualizada.</b> ${cambios.length ? `Se actualizaron ${cambios.length} equipos sin moverlos: ${esc(cambios.join(', '))}.` : 'Los equipos ubicados no tenían cambios.'}`
+    + (nuevos.length ? ` <b>Nuevos, todavía sin mesa:</b> ${esc(nuevos.map(q => q.nombre).join(', '))}.` : '')
+    + (sobran.length ? ` <span class="alerta">Ya no están en la lista: ${esc(sobran.map(i => i.etiqueta).join(', '))}.</span> <button id="btnLiberarMesas">Liberar esas mesas</button>` : '')
+    + (apretados.length ? ` <span class="alerta">Ahora quedan apretados: ${esc(apretados.join(', '))}; conviene sumarles una mesa.</span>` : '');
+  // si no hubo cambios nuevos y el aviso de pendientes ya está en pantalla, no se redibuja (se perdería el clic en su botón)
+  const pend = JSON.stringify([nuevos.map(q => q.nombre), sobran.map(i => i.etiqueta)]);
+  if (!cambios.length && pend === ultimoSync && $('eqManual').textContent) return;
+  ultimoSync = pend; $('eqManual').innerHTML = html;
+  const b = $('btnLiberarMesas'); if (b) b.onclick = () => { marcar(); sobran.forEach(quitarEquipo); avisar('items'); ultimoSync = ''; $('eqManual').textContent = 'Mesas liberadas.'; };
+  aviso(`Lista actualizada: ${cambios.length} con cambios${nuevos.length ? `, ${nuevos.length} nuevos` : ''}${sobran.length ? `, ${sobran.length} que ya no están` : ''}.`);
+}
+/** Copia los datos del equipo a su mesa, sin tocar dónde está ni qué mueble es. */
+function asignarSoloDatos(it, q, lista) {
+  it.equipo = true; it.etiqueta = q.nombre; CAMPOS_EQ.forEach(k => { if (q[k] !== undefined) it[k] = q[k]; else delete it[k]; });
+  if (it.colorPropio === undefined) it.colorPropio = it.color;
+  it.color = colorEquipo(lista, q) || it.colorPropio;
+}
+function guardarEquipos(sincronizar = true) { equipoActivo = null; proyecto().equipos = { texto: $('eqTexto').value, tipo: $('eqTipo').value, porDef: num($('eqPorDef').value, 0, 40, 4), porMesa: num($('eqPorMesa').value, 0, 40, 4) }; avisar('nombre'); pintarGuia(); pintarListaEquipos(); if (sincronizar === true) sincronizarEquipos(); }
 const sinAc = t => t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 const NO_SIRVE = /^(ss\.?hh|dep[oó]sito|cocina|oficina|administraci|direcci|recepci|vestuario|porter|kitchenette|sala de dormir|cancha|explanada|juegos|gradas|aulas y comedor|pasaje|jard[ií]n)/i;
 /**
@@ -319,7 +362,7 @@ async function elegirLugares(equipos, tipo, porMesa, sumar = false) {
   return agregados;
 }
 async function distribuirEquipos(sumarLugares = false) {
-  guardarEquipos();
+  guardarEquipos(false);
   const l = contarEquipos(), p = proyecto();
   if (!l.length) return aviso('Escribí al menos un equipo, uno por renglón.');
   const tipoEq = E.catalogo().find(t => t.id === $('eqTipo').value), porMesa = num($('eqPorMesa').value, 0, 40, 4);
@@ -1123,7 +1166,7 @@ function conectar() {
     enfocarLugar(); pintarGuia(); pintarSala();
   };
   $('chkTodoPanel').onchange = () => irEtapa(etapa(), false);
-  $('eqTexto').oninput = () => { contarEquipos(); }; $('eqTexto').onchange = $('eqTipo').onchange = $('eqPorDef').onchange = $('eqPorMesa').onchange = guardarEquipos;
+  $('eqTexto').oninput = () => { contarEquipos(); }; $('eqTexto').onchange = $('eqPorDef').onchange = () => guardarEquipos(true); $('eqTipo').onchange = $('eqPorMesa').onchange = () => guardarEquipos(false);
   $('btnDistribuir').onclick = () => distribuirEquipos();
   $('btnRepartirMesas').onclick = repartirEnMesas;
   $('eqLista').onclick = e => {
