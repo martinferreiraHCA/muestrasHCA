@@ -116,19 +116,43 @@ const ETAPAS = [
   { id: 'lugares', t: 'Lugares', titulo: 'Elegir los lugares', vista: 'plano', herr: 'espacios',
     ayuda: 'Tocá en el plano los lugares donde va a ser la muestra, o tildalos en la lista. Si un límite está mal, corregilo con «Editar forma»; si falta un lugar, dibujalo con Rectángulo o Polígono.' },
   { id: 'equipos', t: 'Equipos', titulo: 'Cargar los equipos', vista: 'plano', herr: 'mover',
-    ayuda: 'Escribí los equipos, uno por renglón, o pegá la planilla (Grupo, Equipo, Integrantes, Necesidad) y apretá «Distribuir». Si no elegiste lugares, el sistema los elige solo. el sistema arma varias distribuciones, simula la visita con cada una y deja la que mejor circula. Conviene marcar antes la Entrada (panel de la izquierda). Si no tenés equipos, seguí al paso siguiente.' },
+    ayuda: 'Escribí los equipos, uno por renglón, o pegá la planilla (Grupo, Equipo, Integrantes, Necesidad) y apretá «Distribuir». Si no elegiste lugares, el sistema los elige solo: arma varias distribuciones, simula la visita con cada una y deja la que mejor circula. Conviene marcar antes la Entrada (panel de la izquierda). Si no tenés equipos, seguí al paso siguiente.' },
   { id: 'muebles', t: 'Muebles', titulo: 'Distribuir los muebles', vista: 'plano', herr: 'mover',
     ayuda: 'Podés armar el salón solo (auditorio, anfiteatro, aula…) con el panel de la izquierda, o a mano: tocá un elemento de la lista para agregarlo y arrastralo a su lugar. Con uno seleccionado, a la derecha podés cambiarle el nombre, los estudiantes y repetirlo en filas.' },
   { id: 'recorrido', t: 'Recorrido', titulo: 'Entrada, salida y circulación', vista: 'sim', herr: 'mover',
     ayuda: 'Marcá por dónde entra y por dónde sale la gente y apretá «Simular» para ver cómo circula y dónde se junta.' },
   { id: 'sol', t: 'Sol', titulo: 'Sol y sombras', vista: 'sol', herr: 'mover',
     ayuda: 'Mirá qué partes quedan al sol a la hora de la muestra. Sirve sobre todo para los lugares al aire libre.' },
-  { id: 'folleto', t: 'Folleto y PDF', titulo: 'Folleto y PDF', vista: 'folleto', herr: 'mover',
+  { id: 'folleto', t: 'Entrega', titulo: 'Folleto y PDF', vista: 'folleto', herr: 'mover',
     ayuda: 'Revisá el mapa «cómo llegar», descargalo y generá el PDF con todo.' },
 ];
 let lugar = -1;                                    // en la etapa de muebles: índice del lugar enfocado (-1 = todos)
 const etapa = () => Math.min(ETAPAS.length, Math.max(1, proyecto().etapa || 1));
 const lugares = () => nivel ? espaciosElegidos(nivel, proyecto()) : [];
+/** Niveles donde la muestra tiene lugares elegidos. */
+function nivelesMuestra() {
+  const p = proyecto(), s = new Set();
+  p.espacios.forEach(id => { const pr = p.propios.find(e => e.id === id); s.add(pr ? pr.nivel : id.split('-')[0]); });
+  return indice.filter(x => s.has(x.id));
+}
+const CIRC = ['pasillo', 'espera', 'entrada', 'salida', 'acceso', 'persona'];
+/** Qué le falta a cada paso, mirando toda la muestra (todos los niveles). est: ok · falta · opc (nada que hacer todavía). */
+function revision() {
+  const p = proyecto(), its = p.items, r = {};
+  const f = [!p.fecha && 'la fecha', !(p.horaInicio && p.horaFin) && 'el horario'].filter(Boolean);
+  r.datos = f.length ? { est: 'falta', txt: 'Falta ' + f.join(' y ') } : { est: 'ok', txt: `${p.fecha.split('-').reverse().join('/')} · ${p.horaInicio} a ${p.horaFin}` };
+  const nm = nivelesMuestra();
+  r.lugares = p.espacios.length ? { est: 'ok', txt: `${p.espacios.length} lugar${p.espacios.length > 1 ? 'es' : ''} (${nm.map(x => x.nombre).join(', ')})` } : { est: 'falta', txt: 'No elegiste ningún lugar' };
+  const q = leerEquipos(p.equipos?.texto, p.equipos?.porDef ?? 4), puestos = new Set(its.filter(i => i.equipo).map(i => i.etiqueta)), sin = q.filter(x => !puestos.has(x.nombre));
+  r.equipos = !q.length ? { est: 'opc', txt: 'Sin equipos cargados (es opcional)' } : sin.length ? { est: 'falta', txt: `${sin.length} de ${q.length} equipos sin ubicar: ${sin.slice(0, 3).map(x => x.nombre).join(', ')}${sin.length > 3 ? '…' : ''}` } : { est: 'ok', txt: `${q.length} equipos, todos ubicados` };
+  const mob = its.filter(i => !CIRC.includes(i.tipo)).length;
+  r.muebles = mob ? { est: 'ok', txt: `${mob} elemento${mob > 1 ? 's' : ''} en el plano` } : { est: 'falta', txt: 'Todavía no hay muebles en el plano' };
+  const ne = its.filter(esEntrada).length, np = its.filter(esParada).length;
+  r.recorrido = !ne ? { est: 'falta', txt: 'Falta marcar la entrada' } : !np ? { est: 'falta', txt: 'No hay stands ni mesas para visitar' } : { est: 'ok', txt: `${ne} entrada${ne > 1 ? 's' : ''} · ${np} puntos para visitar` };
+  r.sol = { est: 'opc', txt: 'Opcional: sirve para los lugares al aire libre' };
+  r.folleto = { est: 'opc', txt: '' };
+  return r;
+}
 function enfocarLugar() {
   const l = lugares();
   if (lugar >= l.length) lugar = -1;
@@ -137,7 +161,7 @@ function enfocarLugar() {
 async function irEtapa(n, mover = true) {
   n = Math.min(ETAPAS.length, Math.max(1, n));
   let e = ETAPAS[n - 1];
-  if (n > 2 && !lugares().length && e.id !== 'equipos') { aviso('Primero elegí al menos un lugar para la muestra.'); n = 2; e = ETAPAS[1]; }
+  if (n > 2 && !nivelesMuestra().length && e.id !== 'equipos') { aviso('Primero elegí al menos un lugar para la muestra.'); n = 2; e = ETAPAS[1]; }
   proyecto().etapa = n; avisar('etapa');
   document.querySelectorAll('.panel.izq section[data-en]').forEach(s => s.classList.toggle('oculto', !$('chkTodoPanel').checked && !s.dataset.en.split(',').includes(e.id)));
   await ver(e.vista);
@@ -154,10 +178,20 @@ async function irEtapa(n, mover = true) {
   if (e.id === 'muebles') pintarSala();
   pintarGuia();
 }
+// Si se redibuja la guía mientras se está apretando un botón suyo (p. ej. al salir de un campo de texto), el clic se pierde:
+// mientras el puntero está apretado se posterga el redibujo.
+let apretado = false, guiaPendiente = false;
+document.addEventListener('pointerdown', () => { apretado = true; }, true);
+['pointerup', 'pointercancel'].forEach(t => document.addEventListener(t, () => { apretado = false; if (guiaPendiente) { guiaPendiente = false; setTimeout(pintarGuia, 0); } }, true));
 function pintarGuia() {
   if (!nivel) return;
+  if (apretado) { guiaPendiente = true; return; }
   const n = etapa(), e = ETAPAS[n - 1], p = proyecto(), l = lugares(), its = P.itemsNivel();
-  $('etapas').innerHTML = ETAPAS.map((x, i) => `<button data-n="${i + 1}" class="${i + 1 === n ? 'activa' : i + 1 < n ? 'hecha' : ''}"><span class="n">${i + 1 < n ? '✓' : i + 1}</span>${x.t}</button>`).join('');
+  const rev = revision();
+  $('etapas').innerHTML = ETAPAS.map((x, i) => {
+    const r = rev[x.id], c = i + 1 === n ? 'activa' : r.est === 'ok' || (r.est === 'opc' && i + 1 < n) ? 'hecha' : i + 1 < n ? 'falta' : '';
+    return `<button data-n="${i + 1}" class="${c}" title="${esc(r.txt)}"><span class="n">${c === 'hecha' ? '✓' : c === 'falta' ? '!' : i + 1}</span>${x.t}</button>`;
+  }).join('');
   let estado = '', extra = '';
   if (n === 1) estado = p.fecha ? `${p.fecha.split('-').reverse().join('/')}${p.horaInicio ? ' · ' + p.horaInicio + (p.horaFin ? ' a ' + p.horaFin : '') : ' · <span class="falta">falta el horario</span>'}` : '<span class="falta">falta la fecha</span>';
   if (n === 2) estado = l.length ? `<span class="ok">${l.length} lugar${l.length > 1 ? 'es' : ''} · ${Math.round(l.reduce((a, x) => a + x.area, 0))} m²</span>` : '<span class="falta">todavía no elegiste ninguno</span>';
@@ -168,10 +202,20 @@ function pintarGuia() {
     estado = `${dentro} elemento${dentro === 1 ? '' : 's'}${act ? ' en este lugar' : ' en total'}`;
     if (l.length > 1) extra = `<div class="lugares"><button data-l="prev" title="Lugar anterior">◀</button><b title="${esc(act ? act.nombre : 'Todos los lugares')}">${esc(act ? act.nombre : 'Todos los lugares')}</b><button data-l="next" title="Lugar siguiente">▶</button><button data-l="todos" title="Ver todos los lugares juntos">Ver todos</button></div>`;
   }
-  if (e.id === 'recorrido') { const ne = its.filter(esEntrada).length; estado = ne ? `<span class="ok">${ne} entrada${ne > 1 ? 's' : ''}</span>` : '<span class="falta">falta marcar la entrada</span>'; }
+  if (e.id === 'recorrido' && its.filter(esEntrada).length && !its.some(esParada)) estado = '<span class="falta">no hay stands ni mesas para visitar: ponelos en el paso 3 o 4</span>';
+  else if (e.id === 'recorrido') { const ne = its.filter(esEntrada).length; estado = ne ? `<span class="ok">${ne} entrada${ne > 1 ? 's' : ''}</span>` : '<span class="falta">falta marcar la entrada</span>'; }
   if (e.id === 'sol' && !l.some(x => x.exterior || x.propio)) estado = 'Tus lugares son interiores: podés pasar al paso siguiente.';
+  // la muestra puede estar en varios niveles: si en este no hay lugares, se ofrece ir a los que sí
+  const nm = nivelesMuestra();
+  if (n > 2 && !l.length && nm.length) { estado = '<span class="falta">En este nivel no hay lugares elegidos.</span>'; extra = `<div class="lugares"><b>La muestra está en</b>${nm.map(x => `<button data-nivel="${x.id}">${esc(x.nombre)}</button>`).join('')}</div>`; }
+  else if (n > 2 && nm.length > 1 && e.vista !== 'folleto') extra += `<div class="lugares" title="La muestra ocupa varios niveles: cada uno se arma por separado"><b>Nivel</b>${nm.map(x => `<button data-nivel="${x.id}" class="${x.id === nivel.id ? 'activo' : ''}">${esc(x.nombre)}</button>`).join('')}</div>`;
+  if (e.id === 'folleto') {
+    const pend = ETAPAS.filter(x => rev[x.id].est === 'falta');
+    estado = pend.length ? `<span class="falta">Quedan ${pend.length} cosa${pend.length > 1 ? 's' : ''} por revisar (lista a la izquierda).</span>` : '<span class="ok">Todo listo para entregar.</span>';
+    $('revision').innerHTML = ETAPAS.slice(0, -1).map((x, i) => { const r = rev[x.id]; return `<button data-n="${i + 1}" class="rev ${r.est}"><span>${r.est === 'ok' ? '✓' : r.est === 'falta' ? '!' : '–'}</span><b>${x.t}</b><small>${esc(r.txt)}</small></button>`; }).join('');
+  }
   $('guia').innerHTML = `<span class="paso">Paso ${n} de ${ETAPAS.length}</span><h1>${e.titulo}</h1><p>${e.ayuda} ${estado ? '<b>' + estado + '</b>' : ''}</p>${extra}
-    <div class="nav"><button data-n="${n - 1}" ${n === 1 ? 'disabled' : ''}>◀ Anterior</button>${n < ETAPAS.length ? `<button data-n="${n + 1}" class="primario">Siguiente ▶</button>` : ''}</div>`;
+    <div class="nav"><button data-n="${n - 1}" ${n === 1 ? 'disabled' : ''}>◀ Anterior</button>${n < ETAPAS.length ? `<button data-n="${n + 1}" class="primario">Siguiente ▶</button>` : '<button data-fin="guardar">Guardar</button><button data-fin="pdf" class="primario">Generar PDF</button>'}</div>`;
 }
 const puntoEnPoligono = (x, y, p) => { let d = false; for (let i = 0, j = p.length - 1; i < p.length; j = i++) if ((p[i][1] > y) !== (p[j][1] > y) && x < (p[j][0] - p[i][0]) * (y - p[i][1]) / (p[j][1] - p[i][1]) + p[i][0]) d = !d; return d; };
 
@@ -1175,9 +1219,19 @@ function conectar() {
   $('btnEntrada').onclick = () => marcarPaso('entrada'); $('btnSalida').onclick = () => marcarPaso('salida'); $('btnEspera').onclick = () => marcarPaso('espera');
   $('inAltura').onchange = e => { marcar(); proyecto().altura = num(e.target.value, 1, 8, 3); avisar('altura'); };
   $('inBuscarEsp').oninput = pintarEspacios;
-  const clicEtapa = e => { const b = e.target.closest('[data-n]'); if (b && !b.disabled) irEtapa(+b.dataset.n); };
+  const clicEtapa = async e => {
+    const b = e.target.closest('[data-n]'); if (!b || b.disabled) return;
+    const de = etapa(), a = +b.dataset.n, r = revision()[ETAPAS[de - 1].id];
+    await irEtapa(a);
+    // se puede seguir con cosas pendientes, pero se avisa qué quedó
+    if (etapa() > de && r.est === 'falta') aviso(`Quedó pendiente en «${ETAPAS[de - 1].t}»: ${r.txt.charAt(0).toLowerCase() + r.txt.slice(1)}. Podés volver cuando quieras.`);
+  };
+  $('revision').onclick = clicEtapa;
   $('etapas').onclick = clicEtapa;
   $('guia').onclick = e => {
+    const fin = e.target.closest('[data-fin]'); if (fin) return fin.dataset.fin === 'pdf' ? exportarPDF() : guardarArchivo();
+    const nv = e.target.closest('[data-nivel]');
+    if (nv) { if (nv.dataset.nivel !== nivel.id) { $('selNivel').value = nv.dataset.nivel; $('selNivel').dispatchEvent(new Event('change')); } return; }
     const b = e.target.closest('[data-l]'); if (!b) return clicEtapa(e);
     const l = lugares().length;
     lugar = b.dataset.l === 'todos' ? -1 : b.dataset.l === 'next' ? (lugar + 1) % l : (lugar <= 0 ? l - 1 : lugar - 1);
@@ -1195,7 +1249,7 @@ function conectar() {
   $('btnPasillo').onclick = () => ui.alHerramienta('pasillo');
   $('saLugar').onchange = () => { cargarSala(); const e = lugares().find(x => x.id === $('saLugar').value); if (e) P.centrarEn(e.poly); };
   $('btnArmarSala').onclick = armarSalaAhora; $('btnQuitarSala').onclick = quitarSala;
-  $('btnPDF2').onclick = () => exportarPDF();
+  $('btnPDF2').onclick = () => exportarPDF(); $('btnGuardar2').onclick = guardarArchivo;
   $('btn3D').onclick = () => ver('iso'); $('btnVolverPlanta').onclick = () => ver('plano');
   $('listaEdificios').onchange = e => {
     const id = e.target.dataset.id; if (!id) return;

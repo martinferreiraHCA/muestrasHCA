@@ -149,7 +149,7 @@ export function importarProyecto(obj) {
   const i = estado.proyectos.findIndex(x => x.id === p.id);
   if (i >= 0) estado.proyectos[i] = p; else estado.proyectos.push(p);
   // la muestra vacía con la que arranca una computadora nueva no hace falta
-  estado.proyectos = estado.proyectos.filter(x => x.id === p.id || x.items.length || (x.espacios || []).length || (x.equipos || []).length || x.equiposTexto);
+  estado.proyectos = estado.proyectos.filter(x => x.id === p.id || x.items.length || (x.espacios || []).length || x.equipos?.texto);
   abrirProyecto(p.id);
   return i >= 0;
 }

@@ -12,7 +12,7 @@
 <header class="barra">
   <div class="marca">Muestras <b>HCA</b></div>
   <select id="selProyecto" title="Muestra actual"></select>
-  <button id="btnNuevo" title="Crear una muestra nueva">+ Nueva</button>
+  <button id="btnNuevo" title="Crear una muestra nueva">+</button>
   <button id="btnMasProyecto" title="Duplicar, exportar, importar o eliminar">⋯</button>
   <div class="sep"></div>
   <label class="campo-inline">Nivel
@@ -31,7 +31,7 @@
   <button id="btnAbrir" title="Abre una muestra guardada en un archivo (Ctrl+O)">Abrir</button>
   <button id="btnDeshacer" title="Deshacer (Ctrl+Z)">↶</button>
   <button id="btnRehacer" title="Rehacer (Ctrl+Y)">↷</button>
-  <button id="btnPDF" class="primario">Generar PDF</button>
+  <button id="btnPDF" class="primario" title="Generar el PDF con todo">PDF</button>
 </header>
 
 <div id="guia" class="guia"></div>
@@ -113,7 +113,10 @@
     <section data-en="folleto">
       <h2>Para entregar</h2>
       <p class="ayuda">El <b>mapa del folleto</b> se descarga con los botones de arriba del dibujo (SVG para editar, PNG para pegar). El <b>PDF</b> reúne la planta con las ubicaciones, la vista 3D, la circulación, el sol y el listado.</p>
+      <h3 class="sub">Revisión antes de entregar</h3>
+      <div id="revision" class="revision"></div>
       <button id="btnPDF2" class="primario ancho">Generar PDF</button>
+      <button id="btnGuardar2" class="ancho" style="margin-top:6px" title="Guarda toda la muestra en un archivo para seguir en otra computadora">Guardar en un archivo</button>
     </section>
     <section>
       <label class="check"><input type="checkbox" id="chkTodoPanel"> Mostrar todos los paneles</label>
