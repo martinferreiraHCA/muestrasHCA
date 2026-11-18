@@ -26,6 +26,8 @@ const A = {
   'el frente esta': ['Hacia qué lado de la pantalla miran las sillas (donde está el escenario o el pizarrón).', '«Automático» prueba los cuatro lados y deja el que da más lugares y pone a la gente más cerca del escenario. «Arriba»: todos miran hacia el borde superior del plano.'],
   // --- propiedades ---
   'cambiar ': ['Reemplaza el mueble por otro del catálogo, conservando el lugar, el giro, el nombre y el equipo.', 'Tocás «Seleccionar equipos», elegís «Tablón» y todas las mesas de equipos pasan a ser tablones de una vez.'],
+  'poner las que hagan falta': ['Al cambiar por una mesa más chica, pone varias juntas para llegar al mismo frente que tenía la anterior y para que entren todos sus estudiantes.', 'Un tablón de 2 m cambiado por mesas escolares de 0,6 m queda como 4 mesas escolares juntas.'],
+  'mesas juntas': ['Cuántas mesas iguales van una al lado de la otra en este puesto.', 'Con 3, una mesa de 1,2 m pasa a ser un frente de 3,6 m, y el inventario cuenta 3.'],
   'ancho (m)': ['Medida del mueble de lado a lado, en metros.', '1,2 es una mesa de un metro veinte de frente.'],
   'fondo (m)': ['Medida del mueble de adelante hacia atrás, en metros.', '0,6 es una mesa de sesenta centímetros de profundidad.'],
   'alto (m)': ['Altura del mueble. Se ve en 3D y sirve para las sombras.', 'Una mesa mide 0,75; un panel, 1,8.'],

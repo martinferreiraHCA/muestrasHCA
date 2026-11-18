@@ -849,6 +849,8 @@ function pintarPanel() {
       ${!varios && !['zona', 'texto', 'persona', 'silla'].includes(u.modelo) && listaEquipos().length ? `<label>Equipo asignado<select id="pEquipo"><option value="">— ninguno —</option>${listaEquipos().map(q => `<option value="${esc(q.nombre)}" ${u.equipo && u.etiqueta === q.nombre ? 'selected' : ''}>${esc(q.nombre)} (${q.estudiantes})${mesaDe(q.nombre) && mesaDe(q.nombre) !== u ? ' · ya tiene mesa' : ''}</option>`).join('')}</select></label>` : ''}
       <label class="check" title="Los visitantes de la simulación de circulación se detienen en las paradas"><input id="pParada" type="checkbox" ${sel.every(esParada) ? 'checked' : ''}> Es una parada del recorrido</label>
       <label>Cambiar ${varios ? `los ${sel.length} elementos` : 'este elemento'} por<select id="pTipo"><option value="">— elegir —</option>${E.catalogo().filter(t => t.grupo !== 'Circulación' && !['zona', 'texto'].includes(t.modelo)).map(t => `<option value="${t.id}">${esc(t.nombre)} (${t.w} × ${t.d} m)</option>`).join('')}</select></label>
+      <label class="check" title="Si la mesa nueva es más chica, pone varias juntas hasta igualar el frente que tenía y para que entren sus estudiantes"><input id="pEquiv" type="checkbox" checked> Poner las que hagan falta para igualar</label>
+      ${sel.every(i => i.modelo === 'mesa') ? `<label title="Mesas iguales puestas una al lado de la otra">Mesas juntas<input id="pMesas" type="number" min="1" max="12" value="${sel.every(i => (i.mesas || 1) === (u.mesas || 1)) ? u.mesas || 1 : ''}"></label>` : ''}
       <div class="botones">
         <button id="pIguales" title="Selecciona todos los elementos de este mismo tipo en el nivel">Seleccionar iguales</button>
         <button id="pEquipos" title="Selecciona todas las mesas que tienen un equipo">Seleccionar equipos</button>
@@ -892,16 +894,27 @@ function pintarPanel() {
   vivo('pColor', v => sel.forEach(i => { i.color = v; }));
   vivo('pEst', v => { const n = num(v, 0, 40, 0); sel.forEach(i => { i.estudiantes = Math.round(n); }); });
   if ($('pEquipo')) $('pEquipo').onchange = e => { marcar(); const q = listaEquipos().find(x => x.nombre === e.target.value); if (q) asignarEquipo(u, q); else quitarEquipo(u); avisar('items'); };
+  // ancho de una sola mesa del elemento (las mesas juntas multiplican el ancho)
+  const anchoUna = i => E.catalogo().find(c => c.id === i.tipo)?.w || i.w / (i.mesas || 1);
+  const ponerMesas = (i, n) => { const una = anchoUna(i); if (n > 1) i.mesas = n; else delete i.mesas; i.w = Math.round(una * n * 100) / 100; };
   $('pTipo').onchange = e => {
     const t = E.catalogo().find(c => c.id === e.target.value); if (!t) return;
-    marcar();
+    const igualar = $('pEquiv').checked && t.modelo === 'mesa';
+    marcar(); let total = 0;
     sel.forEach(i => {            // cambia el mueble; conserva lugar, giro, nombre, equipo y estudiantes
-      Object.assign(i, { tipo: t.id, nombre: t.nombre, modelo: t.modelo, w: t.w * (t.modelo === 'mesa' ? i.mesas || 1 : 1), d: t.d, h: t.h });
-      if (t.modelo !== 'mesa') delete i.mesas;
+      // cuántas hacen falta para llegar al mismo frente que tenía, y para que entren sus estudiantes
+      let n = t.modelo === 'mesa' ? i.mesas || 1 : 1;
+      if (igualar) {
+        n = Math.max(1, Math.ceil(i.w / t.w - 0.12));
+        while (n < 8 && (i.estudiantes | 0) > capacidadMesa({ modelo: 'mesa', w: t.w * n, d: t.d })) n++;
+      }
+      Object.assign(i, { tipo: t.id, nombre: t.nombre, modelo: t.modelo, d: t.d, h: t.h });
+      ponerMesas(i, n); total += n;
       if (i.colorPropio !== undefined) i.colorPropio = t.color; else i.color = t.color;        // las mesas con equipo mantienen el color de su categoría
     });
-    avisar('items'); aviso(`${sel.length} elemento${sel.length > 1 ? 's cambiados' : ' cambiado'} a ${t.nombre}.`);
+    avisar('items'); aviso(`${sel.length} elemento${sel.length > 1 ? 's cambiados' : ' cambiado'} a ${t.nombre}${total > sel.length ? `: ${total} mesas en total` : ''}.`);
   };
+  if ($('pMesas')) vivo('pMesas', v => { const n = Math.round(num(v, 1, 12, 1)); sel.forEach(i => { if (i.modelo === 'mesa') ponerMesas(i, n); }); });
   const elegir = f => { ui.seleccion.clear(); P.itemsNivel().filter(f).forEach(i => ui.seleccion.add(i.id)); pintarPanel(); P.pedir(); aviso(`${ui.seleccion.size} seleccionados.`); };
   $('pIguales').onclick = () => elegir(i => sel.some(x => x.tipo === i.tipo));
   $('pEquipos').onclick = () => elegir(i => i.equipo);
