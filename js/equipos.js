@@ -67,9 +67,13 @@ function leerPlanilla(lineas, esFila) {
       continue;
     }
     const nombre = c[1], clave = sinAcentos(nombre).replace(/[^a-z0-9]/g, ''); if (!nombre || vistos.has(clave)) continue; vistos.add(clave);         // si se pegó dos veces, cuenta una
-    const integrantes = c[2].split(/,|\s+y\s+|\s+e\s+/i).map(x => x.trim()).filter(Boolean);
+    // integrantes separados por «·» (nombres completos) o, si no, por comas e «y»
+    const integrantes = (c[2].includes('·') ? c[2].split('·') : c[2].split(/,|\s+y\s+|\s+e\s+/i)).map(x => x.trim()).filter(Boolean);
     const nec = (c[3] || '').replace(/Grupo$/, '').replace(/^sin pedido.*$/i, '').trim(), estado = (c[4] || '').replace(/Grupo$/, '').trim();
-    eq.push({ nombre, estudiantes: Math.min(40, integrantes.length), grupo: c[0], integrantes: integrantes.join(', '), ...pedidos(nec + (seccion ? ' · ' + seccion : '')), necesidad: nec,
+    // si la planilla no trae la columna de pedido, no se pisa lo que ya se sabía del equipo
+    const conPedido = c.length > 3;
+    eq.push({ nombre, estudiantes: Math.min(40, integrantes.length), grupo: c[0], integrantes: integrantes.join(', '),
+      ...(conPedido || seccion ? { ...pedidos(nec + (seccion ? ' · ' + seccion : '')), necesidad: nec } : {}),
       ...(categoria && { categoria }), ...(estado && { estado, listo: !/falta|revisar|pendiente|salvo|sin marcar|prioridad/i.test(estado) && (/todo marcado|prácticamente todo/i.test(estado) || (estado.match(/✓/g) || []).length >= 5) }) });
   }
   return eq;

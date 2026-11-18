@@ -296,7 +296,11 @@ function sincronizarEquipos() {
   const cambios = [], apretados = [], sobran = [];
   let marcado = false;
   for (const it of puestos) {
-    const q = porNombre.get(clave(it.etiqueta));
+    let q = porNombre.get(clave(it.etiqueta));
+    if (!q) {          // nombre apenas distinto («Los Bitters» / «Los Bitters :D»): vale si hay un solo candidato
+      const k = clave(it.etiqueta), cand = l.filter(x => { const c = clave(x.nombre); return Math.min(c.length, k.length) >= 5 && (c.startsWith(k) || k.startsWith(c)) && !puestos.some(o => clave(o.etiqueta) === c); });
+      if (cand.length === 1) q = cand[0];
+    }
     if (!q) { sobran.push(it); continue; }
     const antes = huella(it), estAntes = it.estudiantes | 0;
     const copia = { ...it }; asignarSoloDatos(copia, q, l);
@@ -306,7 +310,7 @@ function sincronizarEquipos() {
     cambios.push(it.etiqueta + ((it.estudiantes | 0) !== estAntes ? ` (${estAntes} → ${it.estudiantes | 0} estudiantes)` : ''));
     if ((it.estudiantes | 0) > capacidadMesa(it)) apretados.push(it.etiqueta);
   }
-  const nuevos = l.filter(q => !puestos.some(i => clave(i.etiqueta) === clave(q.nombre)));
+  const nuevos = l.filter(q => !p.items.some(i => i.equipo && clave(i.etiqueta) === clave(q.nombre)));
   if (marcado) avisar('items');
   if (!cambios.length && !nuevos.length && !sobran.length) return;
   const html = `<b>Lista actualizada.</b> ${cambios.length ? `Se actualizaron ${cambios.length} equipos sin moverlos: ${esc(cambios.join(', '))}.` : 'Los equipos ubicados no tenían cambios.'}`
@@ -322,7 +326,8 @@ function sincronizarEquipos() {
 }
 /** Copia los datos del equipo a su mesa, sin tocar dónde está ni qué mueble es. */
 function asignarSoloDatos(it, q, lista) {
-  it.equipo = true; it.etiqueta = q.nombre; CAMPOS_EQ.forEach(k => { if (q[k] !== undefined) it[k] = q[k]; else delete it[k]; });
+  // lo que la lista nueva no trae (por ejemplo el pedido, si pegaste solo grupo, equipo e integrantes) se conserva
+  it.equipo = true; it.etiqueta = q.nombre; CAMPOS_EQ.forEach(k => { if (q[k] !== undefined) it[k] = q[k]; });
   if (it.colorPropio === undefined) it.colorPropio = it.color;
   it.color = colorEquipo(lista, q) || it.colorPropio;
 }
