@@ -81,8 +81,10 @@ las ubicaciones.
   Ctrl+A o Shift+arrastrar) se cambia el tipo de mueble, el tamaño o el color de todos a la vez.
 - **Puntos calientes en el PDF**: página con el mapa de aglomeración, los puntos calientes numerados,
   la causa del principal y qué hacer; y otra con el mapa de tránsito. Se calculan al generar el PDF.
-- **PDF**: una página por nivel con la planta a escala, la vista isométrica, los mapas de
-  circulación y de sol y sombras, y el listado de elementos y nombres.
+- **PDF**: portada con los números de la muestra y un índice; lista de equipos (número, equipo, grupo,
+  integrantes, dónde va a estar, mesa y pedido) agrupada por categoría; equipos por lugar; plano
+  general con cada equipo numerado y un plano de cerca por lugar; vista isométrica, circulación,
+  sol, mapa «cómo llegar» y mobiliario a llevar.
 - Las muestras se guardan solas en el navegador y se pueden exportar/importar como archivo.
 
 ## Cómo usarla
